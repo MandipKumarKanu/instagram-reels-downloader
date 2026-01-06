@@ -41,114 +41,134 @@ function App() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center p-4">
-      <div className="w-full max-w-6xl grid grid-cols-1 lg:grid-cols-2 gap-8 items-start">
-        <div className="neo-box p-8 relative h-full min-h-[500px] flex flex-col">
-          <div className="absolute -top-4 -left-4 neo-tag -rotate-6 z-10">
-            INSTA-SAVER v2.0
+    <div className="page-shell">
+      <div className="page-grid">
+        <section className="panel panel-input">
+          <div className="panel-header">
+            <div className="brand-mark">
+              <span className="brand-dot" /> Reel Vault
+            </div>
+            <div className="status-chip">
+              <span className="status-light online" /> Secure connection
+            </div>
           </div>
 
-          <div className="mb-8 border-b-4 border-black pb-4">
-            <h1 className="text-6xl font-black uppercase tracking-tighter leading-none break-words">
-              Reel
-              <br />
-              Downloader
+          <div className="hero">
+            <p className="eyebrow">Instagram reel saver</p>
+            <h1>
+              Reel Downloader
+              <span className="dot" />
             </h1>
-            <p className="font-bold mt-4 bg-black text-white inline-block px-2 text-xl">
-              NO BLURS. NO BS.
+            <p className="lede">
+              Paste a reel link, process in seconds, and download without
+              watermarks or ads.
+            </p>
+            <div className="chips">
+              <span>Fast</span>
+              <span>HD quality</span>
+              <span>No watermark</span>
+            </div>
+          </div>
+
+          <label className="field-label" htmlFor="reel-url">
+            Reel URL
+          </label>
+          <div className="field-row">
+            <input
+              id="reel-url"
+              type="text"
+              placeholder="https://www.instagram.com/reel/..."
+              value={url}
+              onChange={(e) => setUrl(e.target.value)}
+              className="text-input"
+            />
+            <button
+              onClick={() => setUrl("")}
+              className="ghost-btn"
+              title="Clear"
+              type="button"
+            >
+              Clear
+            </button>
+          </div>
+
+          <div className="action-row">
+            <button
+              onClick={handleDownload}
+              disabled={loading || !url}
+              className="primary-btn"
+            >
+              {loading ? (
+                <>
+                  <span className="spinner" aria-hidden="true" />
+                  Processing...
+                </>
+              ) : (
+                <>
+                  Process <FaBolt />
+                </>
+              )}
+            </button>
+            <p className="hint">
+              Direct, disposable requests. Nothing is logged.
             </p>
           </div>
 
-          <div className="mt-auto space-y-6">
-            <div className="space-y-2">
-              <label className="font-black text-xl block uppercase">
-                Target URL:
-              </label>
-              <input
-                type="text"
-                placeholder="PASTE INSTAGRAM LINK"
-                value={url}
-                onChange={(e) => setUrl(e.target.value)}
-                className="neo-input w-full p-4 text-xl"
-              />
-            </div>
+          {error && <div className="alert alert-error">{error}</div>}
+        </section>
 
-            <div className="flex gap-4">
-              <button
-                onClick={() => setUrl("")}
-                className="neo-btn w-16 flex items-center justify-center bg-white hover:bg-gray-200"
-                title="Clear"
-              >
-                X
-              </button>
-              <button
-                onClick={handleDownload}
-                disabled={loading || !url}
-                className="neo-btn flex-1 py-4 text-2xl flex items-center justify-center gap-3"
-              >
-                {loading ? (
-                  "PROCESSING..."
-                ) : (
-                  <>
-                    PROCESS <FaBolt />
-                  </>
-                )}
-              </button>
+        <section className="panel panel-output">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Preview</p>
+              <p className="mini-title">Ready to download</p>
             </div>
-          </div>
-          {error && (
-            <div className="mt-6 bg-red-500 border-4 border-black p-4 font-bold text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
-              ⚠ {error}
+            <div className="status-chip soft">
+              <span className="status-light safe" /> Safe link
             </div>
-          )}
-        </div>
-
-        <div className="neo-box p-8 h-full min-h-[500px] flex flex-col relative bg-yellow-300">
-          <div className="absolute -top-4 -right-4 neo-tag rotate-3 z-10 bg-white">
-            OUTPUT ZONE
           </div>
 
           {data && data.url_list ? (
-            <div className="flex-1 flex flex-col animate-slide-up">
-              <p className="font-black mb-4 uppercase text-2xl border-b-4 border-black inline-block self-start">
-                Ready for Extraction
-              </p>
-
-              <div className="bg-black border-4 border-black flex-1 w-full relative group min-h-[300px] mb-6 shadow-[6px_6px_0px_0px_rgba(255,255,255,1)]">
+            <div className="output-body">
+              <div className="preview-frame">
                 <video
                   src={data.url_list[0]}
                   controls
-                  className="w-full h-full object-contain absolute inset-0"
+                  className="preview-video"
                 />
               </div>
-
               <a
                 href={data.url_list[0]}
                 download
                 target="_blank"
                 rel="noreferrer"
-                className="neo-btn block w-full py-5 text-center text-2xl bg-cyan-400 hover:bg-cyan-300"
+                className="primary-btn download-btn"
               >
-                <FaDownload className="inline mr-3" /> DOWNLOAD MP4
+                <FaDownload /> Download MP4
               </a>
             </div>
           ) : (
-            <div className="flex-1 flex flex-col items-center justify-center text-center opacity-40 border-4 border-dashed border-black m-4">
-              <div className="text-8xl mb-4">⬇</div>
-              <h2 className="text-3xl font-black uppercase">
-                Waiting for Input
-              </h2>
-              <p className="font-bold mt-2">
-                Paste a link on the left to activate extraction.
+            <div className="placeholder">
+              <div className="placeholder-icon">⇣</div>
+              <h2>Feed me a reel URL</h2>
+              <p>
+                Drop any Instagram reel link to render a preview and download
+                instantly.
               </p>
             </div>
           )}
-        </div>
+        </section>
       </div>
 
-      <footer className="fixed bottom-4 right-4 font-bold bg-white border-4 border-black px-4 py-2 shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] z-50 text-xs md:text-sm">
-        &copy; {new Date().getFullYear()}{" "}
-        <a href="https://github.com/mandipkumarkanu">Mandy</a>
+      <footer className="page-footer">
+        Made with ❤️ by{" "}
+        <a
+          href="https://github.com/mandipkumarkanu"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Mandy
+        </a>
       </footer>
     </div>
   );
