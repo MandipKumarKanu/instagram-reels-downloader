@@ -1,16 +1,33 @@
-# React + Vite
+# 🎨 Reel Downloader Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The **Neo-Brutalist** React interface for the Reel Downloader.
 
-Currently, two official plugins are available:
+## 🖌 Design System
+*   **Style**: Neo-Brutalism
+*   **Colors**: Vivid Purple (`#8c52ff`), Yellow (`#ffde00`), Pink (`#ff69b4`), Cyan (`#00ffff`), Black/White.
+*   **Typography**: Monospace / Courier New.
+*   **Elements**: Hard shadows (`box-shadow: 4px 4px 0px 0px black`), thick borders (`2px - 4px`), high contrast.
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+## 🛠 Setup
 
-## React Compiler
+1.  **Install Dependencies**:
+    ```bash
+    npm install
+    ```
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+2.  **Configure Environment**:
+    Copy the example file:
+    ```bash
+    cp .env.example .env
+    ```
+    Ensure `VITE_BACKEND_URL` points to your backend (default: `http://localhost:5000`).
 
-## Expanding the ESLint configuration
+3.  **Run Development Server**:
+    ```bash
+    npm run dev
+    ```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+## 🏗 Structure
+*   `src/App.jsx`: Main UI logic, layout, and state management.
+*   `src/App.css`: Tailwind configuration and custom Neo-Brutalist utility classes.
+*   `src/main.jsx`: Entry point.

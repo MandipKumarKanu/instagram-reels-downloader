@@ -47,4 +47,7 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   console.log("--- System Checks ---");
   console.log("Instagram Module: Loaded");
+  console.log("Mode: Instagram Only");
 });
+
+module.exports = app;
