@@ -5,7 +5,10 @@ const { instagramGetUrl } = require("instagram-url-direct");
 const app = express();
 app.use(
   cors({
-    origin: "*",
+    origin: [
+      "https://reel-downloader.mandipkk.com.np",
+      "http://localhost:5173",
+    ],
     methods: ["GET", "POST", "OPTIONS"],
     allowedHeaders: ["Content-Type", "Authorization"],
   })
