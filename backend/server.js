@@ -3,7 +3,13 @@ const cors = require("cors");
 const { instagramGetUrl } = require("instagram-url-direct");
 
 const app = express();
-app.use(cors());
+app.use(
+  cors({
+    origin: "*",
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+  })
+);
 app.use(express.json());
 
 app.use((req, res, next) => {

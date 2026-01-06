@@ -10,14 +10,15 @@ function App() {
 
   const handleDownload = async () => {
     if (!url) return;
-    setLoading(true);
-    setError("");
-    setData(null);
-
+    // Simple frontend validation
     if (!url.includes("instagram.com")) {
       setError("ERROR: INVALID LINK. INSTAGRAM ONLY.");
       return;
     }
+
+    setLoading(true);
+    setError("");
+    setData(null);
 
     try {
       const backendUrl =
@@ -97,7 +98,7 @@ function App() {
             </div>
           </div>
           {error && (
-            <div className="mt-6 bg-red-500 border-4 border-black p-4 font-bold text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] animate-bounce">
+            <div className="mt-6 bg-red-500 border-4 border-black p-4 font-bold text-white shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]">
               ⚠ {error}
             </div>
           )}
