@@ -10,7 +10,6 @@ function App() {
 
   const handleDownload = async () => {
     if (!url) return;
-    // Simple frontend validation
     if (!url.includes("instagram.com")) {
       setError("ERROR: INVALID LINK. INSTAGRAM ONLY.");
       return;
