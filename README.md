@@ -1,15 +1,13 @@
-# 📸 Instagram Reel Downloader (Neo-Brutalist Edition)
+# 📸 Instagram Reel Downloader
 
-A high-performance, privacy-focused Instagram Reel downloader featuring a bold **Neo-Brutalist** design.
+A high-performance, privacy-focused Instagram Reel downloader.
 
-![Neo-Brutalist UI Badge](https://img.shields.io/badge/STYLE-NEO--BRUTALISM-8c52ff?style=for-the-badge&labelColor=black)
 ![Node.js](https://img.shields.io/badge/BACKEND-NODE.JS-green?style=for-the-badge&labelColor=black)
 ![React](https://img.shields.io/badge/FRONTEND-REACT-blue?style=for-the-badge&labelColor=black)
 
 ## ✨ Features
 
 *   **Instagram Only**: Dedicated and optimized for Instagram Reels.
-*   **Neo-Brutalist UI**: High contrast, hard shadows, raw typography, and bold colors. No soft blurs.
 *   **Privacy First**: No logs, no tracking, direct link extraction.
 *   **Responsive**: Split-screen layout for desktop, vertical stack for mobile.
 *   **Lightweight**: Pure Node.js backend (no heavy Python dependency).
@@ -43,5 +41,3 @@ npm run dev
 *   **Backend**: Express.js, `instagram-url-direct`
 *   **Tools**: Bun, Git
 
----
-&copy; 2026 REEL_DOWNLOADER_CORP
