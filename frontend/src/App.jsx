@@ -46,10 +46,10 @@ function App() {
         <section className="panel panel-input">
           <div className="panel-header">
             <div className="brand-mark">
-              <span className="brand-dot" /> Reel Vault
+              <span className="brand-dot" /> Reel Saver
             </div>
             <div className="status-chip">
-              <span className="status-light online" /> Secure connection
+              <span className="status-light online" /> Secure Download
             </div>
           </div>
 
