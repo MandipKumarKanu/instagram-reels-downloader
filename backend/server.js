@@ -46,7 +46,7 @@ async function fetchViaGraphQL(shortcode) {
 
   const tokenResponse = await axios.get("https://www.instagram.com/", {
     headers: browserHeaders,
-    timeout: 10000,
+    timeout: 8000,
   });
 
   const cookies = tokenResponse.headers["set-cookie"];
@@ -78,7 +78,7 @@ async function fetchViaGraphQL(shortcode) {
         "Content-Type": "application/x-www-form-urlencoded",
         Cookie: cookieString,
       },
-      timeout: 15000,
+      timeout: 8000,
     }
   );
 
@@ -86,7 +86,77 @@ async function fetchViaGraphQL(shortcode) {
   return parseMediaData(data.data.xdt_shortcode_media);
 }
 
-// Method 2: Using saveig.app API (free public service)
+// Method 2: Using snapinsta.io (different from snapinsta.app)
+async function fetchViaSnapInstaIO(url) {
+  // Get the page first to extract token
+  const pageResp = await axios.get("https://snapinsta.io/", {
+    headers: {
+      "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
+    timeout: 8000,
+  });
+
+  // Extract token from page
+  const tokenMatch = pageResp.data.match(/name="token"\s+value="([^"]+)"/);
+  const token = tokenMatch ? tokenMatch[1] : "";
+
+  const { data } = await axios.post(
+    "https://snapinsta.io/action2.php",
+    `url=${encodeURIComponent(url)}&token=${token}`,
+    {
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Origin: "https://snapinsta.io",
+        Referer: "https://snapinsta.io/",
+      },
+      timeout: 12000,
+    }
+  );
+
+  // Parse HTML response for download links
+  const urlMatches = data.match(/href="(https:\/\/[^"]+)"/g) || [];
+  const videoUrls = urlMatches
+    .map((m) => m.replace('href="', "").replace('"', ""))
+    .filter((u) => u.includes("snapinsta.io/file") || u.includes(".mp4") || u.includes("fbcdn"));
+
+  if (videoUrls.length === 0) throw new Error("SnapInstaIO: No URLs");
+
+  return {
+    results_number: videoUrls.length,
+    url_list: videoUrls,
+    media_details: videoUrls.map((url) => ({ type: "video", url })),
+  };
+}
+
+// Method 3: Using indownloader.app  
+async function fetchViaInDownloader(url) {
+  const { data } = await axios.post(
+    "https://indownloader.app/request",
+    { link: url },
+    {
+      headers: {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Origin: "https://indownloader.app",
+        Referer: "https://indownloader.app/",
+      },
+      timeout: 12000,
+    }
+  );
+
+  if (!data || !data.downloadUrl) throw new Error("InDownloader failed");
+
+  const urls = Array.isArray(data.downloadUrl) ? data.downloadUrl : [data.downloadUrl];
+
+  return {
+    results_number: urls.length,
+    url_list: urls,
+    media_details: urls.map((u) => ({ type: "video", url: u })),
+  };
+}
+
+// Method 4: Using saveig.app API
 async function fetchViaSaveIG(url) {
   const { data } = await axios.post(
     "https://saveig.app/api/ajaxSearch",
@@ -94,18 +164,16 @@ async function fetchViaSaveIG(url) {
     {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
         Origin: "https://saveig.app",
         Referer: "https://saveig.app/en",
       },
-      timeout: 15000,
+      timeout: 12000,
     }
   );
 
   if (data.status !== "ok" || !data.data) throw new Error("SaveIG failed");
 
-  // Parse HTML response to extract video URLs
   const videoMatches = data.data.match(/href="([^"]+)"/g) || [];
   const urls = videoMatches
     .map((m) => m.replace('href="', "").replace('"', ""))
@@ -120,87 +188,34 @@ async function fetchViaSaveIG(url) {
   };
 }
 
-// Method 3: Using snapinsta.app API
-async function fetchViaSnapInsta(url) {
-  // First get the token
-  const pageResp = await axios.get("https://snapinsta.app/", {
-    headers: {
-      "User-Agent":
-        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-    },
-    timeout: 10000,
-  });
-
-  const tokenMatch = pageResp.data.match(/name="token" value="([^"]+)"/);
-  const token = tokenMatch ? tokenMatch[1] : "";
-
+// Method 5: Using downloadgram.org
+async function fetchViaDownloadGram(url) {
   const { data } = await axios.post(
-    "https://snapinsta.app/action.php",
-    `url=${encodeURIComponent(url)}&action=post&token=${token}`,
+    "https://downloadgram.org/",
+    `url=${encodeURIComponent(url)}`,
     {
       headers: {
         "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        Origin: "https://snapinsta.app",
-        Referer: "https://snapinsta.app/",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        Origin: "https://downloadgram.org",
+        Referer: "https://downloadgram.org/",
       },
-      timeout: 15000,
+      timeout: 12000,
     }
   );
 
-  // Parse response for download links
-  const urlMatches =
-    data.match(/https:\/\/[^"'\s]+(?:\.mp4|scontent[^"'\s]+)/g) || [];
+  // Extract video URL from response
+  const urlMatches = data.match(/https:\/\/[^"'\s<>]+(?:\.mp4|scontent[^"'\s<>]+)/g) || [];
   const videoUrls = [...new Set(urlMatches)].filter(
-    (u) => !u.includes("_n.jpg")
+    (u) => u.includes(".mp4") || (u.includes("scontent") && !u.includes(".jpg"))
   );
 
-  if (videoUrls.length === 0) throw new Error("SnapInsta: No URLs");
+  if (videoUrls.length === 0) throw new Error("DownloadGram: No URLs");
 
   return {
     results_number: videoUrls.length,
     url_list: videoUrls,
     media_details: videoUrls.map((url) => ({ type: "video", url })),
-  };
-}
-
-// Method 4: Using igdownloader.app
-async function fetchViaIGDownloader(url) {
-  const { data } = await axios.post(
-    "https://igdownloader.app/api/ajaxSearch",
-    `recaptchaToken=&q=${encodeURIComponent(url)}&t=media&lang=en`,
-    {
-      headers: {
-        "Content-Type": "application/x-www-form-urlencoded",
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        Origin: "https://igdownloader.app",
-        Referer: "https://igdownloader.app/",
-      },
-      timeout: 15000,
-    }
-  );
-
-  if (data.status !== "ok" || !data.data)
-    throw new Error("IGDownloader failed");
-
-  const videoMatches = data.data.match(/href="([^"]+)"/g) || [];
-  const urls = videoMatches
-    .map((m) => m.replace('href="', "").replace('"', ""))
-    .filter(
-      (u) =>
-        u.includes(".mp4") ||
-        u.includes("fbcdn.net") ||
-        u.includes("cdninstagram")
-    );
-
-  if (urls.length === 0) throw new Error("No URLs found");
-
-  return {
-    results_number: urls.length,
-    url_list: urls,
-    media_details: urls.map((url) => ({ type: "video", url })),
   };
 }
 
@@ -262,9 +277,10 @@ async function fetchInstagramMedia(url) {
 
   const methods = [
     { name: "GraphQL", fn: () => fetchViaGraphQL(shortcode) },
+    { name: "SnapInstaIO", fn: () => fetchViaSnapInstaIO(url) },
     { name: "SaveIG", fn: () => fetchViaSaveIG(url) },
-    { name: "IGDownloader", fn: () => fetchViaIGDownloader(url) },
-    { name: "SnapInsta", fn: () => fetchViaSnapInsta(url) },
+    { name: "InDownloader", fn: () => fetchViaInDownloader(url) },
+    { name: "DownloadGram", fn: () => fetchViaDownloadGram(url) },
   ];
 
   let lastError;
