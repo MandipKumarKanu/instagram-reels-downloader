@@ -260,6 +260,11 @@ async function sendMediaResult(chatId, media, caption, originalText) {
   };
 
   if (media.length === 1) {
+    opts.reply_markup.inline_keyboard[0].push({
+      text: "⬇️ Download",
+      url: media[0].url,
+    });
+
     const item = media[0];
     if (item.type === "video") {
       await bot.sendVideo(chatId, item.url, opts);
@@ -282,6 +287,25 @@ async function sendMediaResult(chatId, media, caption, originalText) {
 
     for (const chunk of chunks) {
       await bot.sendMediaGroup(chatId, chunk);
+    }
+
+    const downloadButtons = media.map((item, idx) => ({
+      text: `⬇️ Download Item ${idx + 1}`,
+      url: item.url,
+    }));
+
+    const buttonRows = [];
+    for (let i = 0; i < downloadButtons.length; i += 2) {
+      buttonRows.push(downloadButtons.slice(i, i + 2));
+    }
+
+    if (buttonRows.length > 0) {
+      await bot.sendMessage(chatId, "<b>Click to download:</b>", {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: buttonRows,
+        },
+      });
     }
   }
 }
