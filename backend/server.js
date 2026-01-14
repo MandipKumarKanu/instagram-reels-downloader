@@ -1,5 +1,6 @@
 const express = require("express");
 const cors = require("cors");
+const axios = require("axios");
 const { instagramGetUrl } = require("./lib/instagram");
 
 const app = express();
@@ -48,6 +49,28 @@ app.get("/api/download", async (req, res) => {
     res
       .status(500)
       .json({ error: "Failed to fetch video", details: error.message });
+  }
+});
+
+app.get("/api/proxy", async (req, res) => {
+  const { url } = req.query;
+  if (!url) {
+    return res.status(400).send("URL is required");
+  }
+
+  try {
+    const response = await axios({
+      url,
+      method: "GET",
+      responseType: "stream",
+    });
+
+    res.set("Content-Type", response.headers["content-type"]);
+    res.set("Access-Control-Allow-Origin", "*");
+    response.data.pipe(res);
+  } catch (error) {
+    console.error("Proxy error:", error.message);
+    res.status(500).send("Failed to proxy image");
   }
 });
 
