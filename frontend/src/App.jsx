@@ -7,7 +7,7 @@ async function fetchViaCobalt(url) {
   const response = await fetch("https://co.eepy.today/", {
     method: "POST",
     headers: {
-      "Accept": "application/json",
+      Accept: "application/json",
       "Content-Type": "application/json",
     },
     body: JSON.stringify({
@@ -18,20 +18,33 @@ async function fetchViaCobalt(url) {
 
   const data = await response.json();
   if (data.status === "error") throw new Error(data.text || "Cobalt failed");
-  if (data.status === "redirect" || data.status === "tunnel" || data.status === "stream") {
-    return { url_list: [data.url], media_details: [{ type: "video", url: data.url }] };
+  if (
+    data.status === "redirect" ||
+    data.status === "tunnel" ||
+    data.status === "stream"
+  ) {
+    return {
+      url_list: [data.url],
+      media_details: [{ type: "video", url: data.url }],
+    };
   }
   if (data.status === "picker" && data.picker) {
     const urls = data.picker.map((p) => p.url);
-    return { url_list: urls, media_details: urls.map((u) => ({ type: "video", url: u })) };
+    return {
+      url_list: urls,
+      media_details: urls.map((u) => ({ type: "video", url: u })),
+    };
   }
   throw new Error("Unexpected response");
 }
 
 // Fallback using backend
 async function fetchViaBackend(url) {
-  const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-  const response = await fetch(`${backendUrl}/api/download?url=${encodeURIComponent(url)}`);
+  const backendUrl =
+    import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+  const response = await fetch(
+    `${backendUrl}/api/download?url=${encodeURIComponent(url)}`
+  );
   const result = await response.json();
   if (!response.ok) throw new Error(result.error || "Backend failed");
   return result;
@@ -45,8 +58,10 @@ function App() {
 
   const handleDownload = async () => {
     if (!url) return;
-    if (!url.includes("instagram.com")) {
-      setError("Invalid link. Instagram only.");
+    const isInstagram = url.includes("instagram.com");
+    const isFacebook = url.includes("facebook.com") || url.includes("fb.watch");
+    if (!isInstagram && !isFacebook) {
+      setError("Invalid link. Instagram or Facebook only.");
       return;
     }
 
@@ -95,14 +110,14 @@ function App() {
           </div>
 
           <div className="hero">
-            <p className="eyebrow">Instagram reel saver</p>
+            <p className="eyebrow">Instagram & Facebook reel saver</p>
             <h1>
               Reel Downloader
               <span className="dot" />
             </h1>
             <p className="lede">
-              Paste a reel link, process in seconds, and download without
-              watermarks or ads.
+              Paste an Instagram or Facebook reel link, process in seconds, and
+              download without watermarks or ads.
             </p>
             <div className="chips">
               <span>Fast</span>
@@ -118,7 +133,7 @@ function App() {
             <input
               id="reel-url"
               type="text"
-              placeholder="https://www.instagram.com/reel/..."
+              placeholder="Paste Instagram or Facebook reel link..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               className="text-input"
