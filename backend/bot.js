@@ -1,11 +1,12 @@
 const TelegramBot = require("node-telegram-bot-api");
-const fs = require("fs");
 const path = require("path");
 const axios = require("axios");
 const { instagramGetUrl, getStoriesByUsername } = require("./lib/instagram");
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const adminId = process.env.ADMIN_ID;
+const jsonBinApiKey = process.env.JSONBIN_API_KEY_X_MASTER_KEY;
+const jsonBinId = process.env.JSONBIN_BIN_ID;
 
 if (!token) {
   console.warn(
@@ -14,39 +15,58 @@ if (!token) {
   return;
 }
 
-// Stats handling
-const statsFilePath = path.join(__dirname, "stats.json");
+// Memory Cache for Stats
+let cachedStats = { users: [], total_downloads: 0 };
 
-function loadStats() {
+async function initStats() {
   try {
-    if (fs.existsSync(statsFilePath)) {
-      return JSON.parse(fs.readFileSync(statsFilePath, "utf8"));
+    if (!jsonBinApiKey || !jsonBinId) {
+      console.warn(
+        "⚠️ JSONBin credentials missing. Stats will not be persisted."
+      );
+      return;
     }
-  } catch (e) {
-    console.error("Error loading stats:", e);
+    const response = await axios.get(
+      `https://api.jsonbin.io/v3/b/${jsonBinId}/latest`,
+      {
+        headers: { "X-Master-Key": jsonBinApiKey },
+      }
+    );
+    cachedStats = response.data.record;
+    console.log("✅ Stats loaded from JsonBin");
+  } catch (error) {
+    console.error("❌ Failed to load stats from JsonBin:", error.message);
   }
-  return { users: [], total_downloads: 0 };
 }
 
-function saveStats(stats) {
+// Save stats to JsonBin (Fire-and-forget style to not block bot)
+async function saveStatsBackground() {
   try {
-    fs.writeFileSync(statsFilePath, JSON.stringify(stats, null, 2));
-  } catch (e) {
-    console.error("Error saving stats:", e);
+    if (!jsonBinApiKey || !jsonBinId) return;
+    await axios.put(`https://api.jsonbin.io/v3/b/${jsonBinId}`, cachedStats, {
+      headers: {
+        "Content-Type": "application/json",
+        "X-Master-Key": jsonBinApiKey,
+      },
+    });
+  } catch (error) {
+    console.error("❌ Error saving stats to JsonBin:", error.message);
   }
 }
 
 function updateStats(userId) {
-  const stats = loadStats();
-  if (!stats.users.includes(userId)) {
-    stats.users.push(userId);
+  if (!cachedStats.users.includes(userId)) {
+    cachedStats.users.push(userId);
   }
-  stats.total_downloads = (stats.total_downloads || 0) + 1;
-  saveStats(stats);
+  cachedStats.total_downloads = (cachedStats.total_downloads || 0) + 1;
+  saveStatsBackground(); // Run in background
 }
 
 // Create a bot
 const bot = new TelegramBot(token, { polling: true });
+
+// Initialize Stats on Start
+initStats();
 
 console.log("Telegram bot is running...");
 
@@ -86,7 +106,7 @@ bot.on("message", async (msg) => {
         { parse_mode: "Markdown" }
       );
 
-    const stats = loadStats();
+    const stats = cachedStats;
     bot.sendMessage(
       chatId,
       `Starting broadcast to ${stats.users.length} users...`
@@ -109,10 +129,10 @@ bot.on("message", async (msg) => {
 
   // Stats command for admin
   if (messageText === "/stats" && userId.toString() === adminId) {
-    const stats = loadStats();
+    // Use cached stats
     return bot.sendMessage(
       chatId,
-      `📊 **Bot Statistics**\n\nTotal Users: ${stats.users.length}\nTotal Downloads: ${stats.total_downloads}`,
+      `📊 **Bot Statistics**\n\nTotal Users: ${cachedStats.users.length}\nTotal Downloads: ${cachedStats.total_downloads}`,
       { parse_mode: "Markdown" }
     );
   }
@@ -159,11 +179,22 @@ bot.on("message", async (msg) => {
       await sendMediaResult(chatId, media, caption, messageText);
     } catch (err) {
       console.error("Bot Error:", err.message);
-      bot.sendMessage(
-        chatId,
-        "📉 **Could not fetch media.**\n\nSometimes things just don't work out.",
-        { parse_mode: "Markdown" }
-      );
+      const msg = err.message.toLowerCase();
+      if (
+        msg.includes("does not exist") ||
+        msg.includes("private") ||
+        msg.includes("restricted")
+      ) {
+        bot.sendMessage(chatId, `❌ **Error:** ${err.message}`, {
+          parse_mode: "Markdown",
+        });
+      } else {
+        bot.sendMessage(
+          chatId,
+          "📉 **Could not fetch media.**\n\nSometimes things just don't work out.",
+          { parse_mode: "Markdown" }
+        );
+      }
     }
   } else if (messageText === "/start" || messageText === "/help") {
     const welcomeMessage = `
