@@ -2,42 +2,30 @@ import { useState } from "react";
 import "./App.css";
 import { FaDownload, FaBolt } from "react-icons/fa";
 
-// Try multiple Cobalt instances (some community-hosted don't require auth)
+// Direct browser-based fetching using Cobalt API
 async function fetchViaCobalt(url) {
-  const instances = [
-    "https://cobalt-api.ayo.so/",
-    "https://co.eepy.today/",
-    "https://cobalt.canine.tools/",
-  ];
+  const response = await fetch("https://co.eepy.today/", {
+    method: "POST",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      url: url,
+      downloadMode: "auto",
+    }),
+  });
 
-  for (const instance of instances) {
-    try {
-      const response = await fetch(instance, {
-        method: "POST",
-        headers: {
-          "Accept": "application/json",
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          url: url,
-          downloadMode: "auto",
-        }),
-      });
-
-      const data = await response.json();
-      if (data.status === "error") continue;
-      if (data.status === "redirect" || data.status === "tunnel" || data.status === "stream") {
-        return { url_list: [data.url], media_details: [{ type: "video", url: data.url }] };
-      }
-      if (data.status === "picker" && data.picker) {
-        const urls = data.picker.map((p) => p.url);
-        return { url_list: urls, media_details: urls.map((u) => ({ type: "video", url: u })) };
-      }
-    } catch (e) {
-      console.log(`Instance ${instance} failed:`, e.message);
-    }
+  const data = await response.json();
+  if (data.status === "error") throw new Error(data.text || "Cobalt failed");
+  if (data.status === "redirect" || data.status === "tunnel" || data.status === "stream") {
+    return { url_list: [data.url], media_details: [{ type: "video", url: data.url }] };
   }
-  throw new Error("All Cobalt instances failed");
+  if (data.status === "picker" && data.picker) {
+    const urls = data.picker.map((p) => p.url);
+    return { url_list: urls, media_details: urls.map((u) => ({ type: "video", url: u })) };
+  }
+  throw new Error("Unexpected response");
 }
 
 // Fallback using backend
