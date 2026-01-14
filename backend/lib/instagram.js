@@ -15,10 +15,16 @@ async function instagramGetUrl(url_media) {
   });
 }
 
+function getCookies() {
+  // Return the full cookie string from env var
+  return process.env.INSTAGRAM_COOKIES || "";
+}
+
 async function checkRedirect(url) {
   const headers = {};
-  if (process.env.INSTAGRAM_SESSION_ID) {
-    headers["Cookie"] = `sessionid=${process.env.INSTAGRAM_SESSION_ID}`;
+  const cookies = getCookies();
+  if (cookies) {
+    headers["Cookie"] = cookies;
   }
 
   if (url.includes("/share/") || url.includes("share")) {
@@ -26,7 +32,6 @@ async function checkRedirect(url) {
       let res = await axios.get(url, { headers });
       return res.request.res.responseUrl || res.request.path || url;
     } catch (e) {
-      // If redirect fails, return original url and hope for the best
       return url;
     }
   }
@@ -49,21 +54,31 @@ function getShortcode(url) {
 
 async function getCSRFToken() {
   try {
+    // 1. Try to extract from environment variable cookies first
+    const cookies = getCookies();
+    if (cookies) {
+      if (cookies.includes("csrftoken=")) {
+        const match = cookies.match(/csrftoken=([^;]+)/);
+        if (match && match[1]) {
+          return match[1];
+        }
+      }
+    }
+
+    // 2. Fallback: Request main page to get cookies (only if we don't have them or they are incomplete)
     let config = {
       method: "GET",
       url: "https://www.instagram.com/",
       headers: {},
     };
 
-    if (process.env.INSTAGRAM_SESSION_ID) {
-      config.headers[
-        "Cookie"
-      ] = `sessionid=${process.env.INSTAGRAM_SESSION_ID}`;
+    // If we have some cookies, send them, maybe we get a fresh csrf
+    if (cookies) {
+      config.headers["Cookie"] = cookies;
     }
 
     const response = await axios.request(config);
 
-    // If we have a session, sometimes these headers might be different, but let's try to find csrftoken
     if (response.headers["set-cookie"]) {
       const csrfCookie = response.headers["set-cookie"].find((c) =>
         c.includes("csrftoken")
@@ -72,10 +87,6 @@ async function getCSRFToken() {
         return csrfCookie.split(";")[0].replace("csrftoken=", "");
       }
     }
-
-    // Fallback: sometimes it's in the body or we can just try without it if we have a session?
-    // But usually graphQL needs x-csrftoken.
-    // If we are logged in, we can try to extract from cookies sent back or just rely on the one we might have in headers if we had one.
 
     return "missing-token";
   } catch (err) {
@@ -109,16 +120,14 @@ async function instagramRequest(shortcode) {
       data: dataBody,
     };
 
-    if (process.env.INSTAGRAM_SESSION_ID) {
-      config.headers[
-        "Cookie"
-      ] = `sessionid=${process.env.INSTAGRAM_SESSION_ID}`;
+    const cookies = getCookies();
+    if (cookies) {
+      config.headers["Cookie"] = cookies;
     }
 
     const { data } = await axios.request(config);
 
     if (!data.data || !data.data.xdt_shortcode_media) {
-      // Log the error response for debugging
       console.error("Instagram Response Error:", JSON.stringify(data));
       throw new Error(
         "Only posts/reels supported, check if your link is valid or if the account is private."
@@ -135,7 +144,7 @@ async function instagramRequest(shortcode) {
       );
       if (err.response.status === 401) {
         throw new Error(
-          "Instagram returned 401 Unauthorized. Session ID may be invalid or missing."
+          "Instagram returned 401 Unauthorized. Session cookies may be invalid or missing."
         );
       }
     }
