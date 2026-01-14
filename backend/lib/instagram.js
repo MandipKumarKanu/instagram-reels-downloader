@@ -396,7 +396,40 @@ function createOutputData(requestData) {
   }
 }
 
+async function getProfilePictureByUsername(username) {
+  try {
+    const cookies = getCookies();
+    const config = {
+      method: "GET",
+      url: `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        Cookie: cookies,
+        "X-IG-App-ID": "936619743392459",
+      },
+      timeout: 15000,
+    };
+    const { data } = await axios.request(config);
+    if (!data.data || !data.data.user) {
+      throw new Error("User not found or profile is restricted.");
+    }
+    return {
+      url: data.data.user.profile_pic_url_hd,
+      username: data.data.user.username,
+      fullname: data.data.user.full_name,
+      is_private: data.data.user.is_private,
+    };
+  } catch (err) {
+    if (err.response && err.response.status === 404) {
+      throw new Error(`Instagram user "${username}" does not exist.`);
+    }
+    throw new Error(`Could not fetch profile picture for ${username}: ${err.message}`);
+  }
+}
+
 module.exports = {
   instagramGetUrl,
   getStoriesByUsername,
+  getProfilePictureByUsername,
 };
