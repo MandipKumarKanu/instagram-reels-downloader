@@ -15,7 +15,6 @@ if (!token) {
   return;
 }
 
-// Memory Cache for Stats
 let cachedStats = { users: [], total_downloads: 0 };
 
 async function initStats() {
@@ -39,7 +38,7 @@ async function initStats() {
   }
 }
 
-// Save stats to JsonBin (Fire-and-forget style to not block bot)
+// Save stats to JsonBin
 async function saveStatsBackground() {
   try {
     if (!jsonBinApiKey || !jsonBinId) return;
@@ -59,7 +58,7 @@ function updateStats(userId) {
     cachedStats.users.push(userId);
   }
   cachedStats.total_downloads = (cachedStats.total_downloads || 0) + 1;
-  saveStatsBackground(); // Run in background
+  saveStatsBackground();
 }
 
 // Create a bot
@@ -115,7 +114,7 @@ bot.on("message", async (msg) => {
     let success = 0;
     for (const uId of stats.users) {
       try {
-        await bot.sendMessage(uId, `📢 **Broadcast**\n\n${broadcastMsg}`, {
+        await bot.sendMessage(uId, `📢 <b>Broadcast</b>\n\n${broadcastMsg}`, {
           parse_mode: "HTML",
         });
         success++;
