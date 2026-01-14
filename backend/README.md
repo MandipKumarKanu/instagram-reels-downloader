@@ -8,12 +8,14 @@ The minimal Node.js server powering the Reel Downloader.
     ```bash
     npm install
     ```
+2.  **Environment Variables**
+    Create a `.env` file by copying `.env.example` and fill in the required values. `PUBLIC_URL` should be the public URL of your Vercel deployment.
 
-2.  **Start Server**:
+3.  **Start Server**:
     ```bash
     npm start
     ```
-    Runs on **Port 5000** by default.
+    Runs on **Port 5000** by default. The server will automatically set up the Telegram bot webhook on startup.
 
 ## 🔌 API Endpoints
 

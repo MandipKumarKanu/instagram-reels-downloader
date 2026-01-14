@@ -3,7 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const { instagramGetUrl } = require("./lib/instagram");
-require("./bot");
+const bot = require("./bot");
 
 const app = express();
 app.use(
@@ -82,6 +82,23 @@ app.listen(PORT, () => {
   console.log("--- System Checks ---");
   console.log("Instagram Module: Loaded");
   console.log("Mode: Instagram Only");
+
+  // Set up the webhook
+  const publicUrl = process.env.PUBLIC_URL || "https://instagram-reels-downloader-hazel.vercel.app";
+  if (publicUrl) {
+    const webhookUrl = `${publicUrl}/api/webhook`;
+    bot.setWebHook(webhookUrl)
+      .then(() => console.log(`✅ Webhook set to ${webhookUrl}`))
+      .catch((err) => console.error("❌ Failed to set webhook:", err.message));
+  } else {
+    console.warn("⚠️ PUBLIC_URL environment variable not set. Webhook not configured.");
+  }
+});
+
+// Webhook endpoint
+app.post("/api/webhook", (req, res) => {
+  bot.processUpdate(req.body);
+  res.sendStatus(200);
 });
 
 module.exports = app;

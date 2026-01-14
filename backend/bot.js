@@ -83,12 +83,12 @@ function updateStats(userId, downloadLink) {
 }
 
 // Create a bot
-const bot = new TelegramBot(token, { polling: true });
+const bot = new TelegramBot(token); // Polling is disabled
 
 // Initialize Stats on Start
 initStats();
 
-console.log("Telegram bot is running...");
+console.log("Telegram bot is initialized...");
 
 // Helper to format caption
 function formatCaption(result) {
@@ -106,7 +106,9 @@ function formatCaption(result) {
         .replace(/>/g, "&gt;") + "..."
     : "No caption";
 
-  return `👤 <b>Author</b>: ${author}\n📝 <b>Capt</b>: ${capt}\n\nDownloaded via @ig_reels_posts_downloader_bot`;
+  const saveInstruction = "\n\n<i>To save: open the media, tap the 3 dots (top right), and select 'Save to gallery'.</i>";
+
+  return `👤 <b>Author</b>: ${author}\n📝 <b>Capt</b>: ${capt}\n\nDownloaded via @ig_reels_posts_downloader_bot${saveInstruction}`;
 }
 
 bot.on("message", async (msg) => {
@@ -215,26 +217,27 @@ bot.on("message", async (msg) => {
         parse_mode: "Markdown",
       });
     }
-  } else if (isPfpCommand || isUsername) {
+  } else if (isPfpCommand) {
     bot.sendMessage(chatId, `Fetching profile picture... ⏳`);
     try {
       const username = messageText.replace("/pfp", "").trim().replace("@", "");
       if (!username) {
-        return bot.sendMessage(chatId, "Please provide a username, e.g. `/pfp cristiano` or `@cristiano`", {
+        return bot.sendMessage(chatId, "Please provide a username, e.g. `/pfp cristiano`", {
           parse_mode: "HTML",
         });
       }
 
       const pfpData = await getProfilePictureByUsername(username);
 
-      const caption = `👤 <b>${pfpData.fullname}</b> (@${pfpData.username})${pfpData.is_private ? " (Private)" : ""}`;
+      const saveInstruction = "\n\n<i>To save: open the media, tap the 3 dots (top right), and select 'Save to gallery'.</i>";
+      const caption = `👤 <b>${pfpData.fullname}</b> (@${pfpData.username})${pfpData.is_private ? " (Private)" : ""}${saveInstruction}`;
 
       bot.sendPhoto(chatId, pfpData.url, {
         caption: caption,
         parse_mode: "HTML",
         reply_markup: {
           inline_keyboard: [
-            [{ text: "⬇️ Download HD", url: pfpData.url }],
+            [{ text: "🔗 View Full Size", url: pfpData.url }],
           ],
         },
       });
@@ -326,11 +329,6 @@ async function sendMediaResult(chatId, media, caption, originalText) {
   };
 
   if (media.length === 1) {
-    opts.reply_markup.inline_keyboard[0].push({
-      text: "⬇️ Download",
-      url: media[0].url,
-    });
-
     const item = media[0];
     if (item.type === "video") {
       await bot.sendVideo(chatId, item.url, opts);
@@ -354,28 +352,7 @@ async function sendMediaResult(chatId, media, caption, originalText) {
     for (const chunk of chunks) {
       await bot.sendMediaGroup(chatId, chunk);
     }
-
-    const downloadButtons = media.map((item, idx) => ({
-      text: `⬇️ Download Item ${idx + 1}`,
-      url: item.url,
-    }));
-
-    const buttonRows = [];
-    for (let i = 0; i < downloadButtons.length; i += 2) {
-      buttonRows.push(downloadButtons.slice(i, i + 2));
-    }
-
-    if (buttonRows.length > 0) {
-      await bot.sendMessage(chatId, "<b>Click to download:</b>", {
-        parse_mode: "HTML",
-        reply_markup: {
-          inline_keyboard: buttonRows,
-        },
-      });
-    }
   }
 }
 
-bot.on("polling_error", (error) => {
-  console.error("Polling error:", error.code);
-});
+module.exports = bot;
