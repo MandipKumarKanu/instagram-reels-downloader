@@ -71,7 +71,7 @@ function App() {
 
     // Try Cobalt first (direct from browser), then fallback to backend
     const methods = [
-      { name: "Cobalt", fn: () => fetchViaCobalt(url) },
+      // { name: "Cobalt", fn: () => fetchViaCobalt(url) },
       { name: "Backend", fn: () => fetchViaBackend(url) },
     ];
 
