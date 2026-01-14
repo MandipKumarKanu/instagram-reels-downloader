@@ -1,7 +1,11 @@
 const TelegramBot = require("node-telegram-bot-api");
 const path = require("path");
 const axios = require("axios");
-const { instagramGetUrl, getStoriesByUsername } = require("./lib/instagram");
+const {
+  instagramGetUrl,
+  getStoriesByUsername,
+  getProfilePictureByUsername,
+} = require("./lib/instagram");
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
 const adminId = process.env.ADMIN_ID;
@@ -15,7 +19,7 @@ if (!token) {
   return;
 }
 
-let cachedStats = { users: [], total_downloads: 0 };
+let cachedStats = { users: {}, total_downloads: 0 };
 
 async function initStats() {
   try {
@@ -32,9 +36,18 @@ async function initStats() {
       }
     );
     cachedStats = response.data.record;
+    // Defensive coding to handle old data format or empty bin
+    if (!cachedStats.users || Array.isArray(cachedStats.users)) {
+      cachedStats.users = {};
+    }
+    if (!cachedStats.total_downloads) {
+      cachedStats.total_downloads = 0;
+    }
     console.log("✅ Stats loaded from JsonBin");
   } catch (error) {
     console.error("❌ Failed to load stats from JsonBin:", error.message);
+    // Set default stats if loading fails
+    cachedStats = { users: {}, total_downloads: 0 };
   }
 }
 
@@ -53,10 +66,18 @@ async function saveStatsBackground() {
   }
 }
 
-function updateStats(userId) {
-  if (!cachedStats.users.includes(userId)) {
-    cachedStats.users.push(userId);
+function updateStats(userId, downloadLink) {
+  const user = userId.toString();
+  if (!cachedStats.users[user]) {
+    cachedStats.users[user] = {
+      history: [],
+    };
   }
+
+  // Add to history and keep it at 5 items
+  cachedStats.users[user].history.unshift(downloadLink);
+  cachedStats.users[user].history = cachedStats.users[user].history.slice(0, 5);
+
   cachedStats.total_downloads = (cachedStats.total_downloads || 0) + 1;
   saveStatsBackground();
 }
@@ -105,14 +126,14 @@ bot.on("message", async (msg) => {
         { parse_mode: "Markdown" }
       );
 
-    const stats = cachedStats;
+    const userIds = Object.keys(cachedStats.users);
     bot.sendMessage(
       chatId,
-      `Starting broadcast to ${stats.users.length} users...`
+      `Starting broadcast to ${userIds.length} users...`
     );
 
     let success = 0;
-    for (const uId of stats.users) {
+    for (const uId of userIds) {
       try {
         await bot.sendMessage(uId, `📢 <b>Broadcast</b>\n\n${broadcastMsg}`, {
           parse_mode: "HTML",
@@ -128,10 +149,10 @@ bot.on("message", async (msg) => {
 
   // Stats command for admin
   if (messageText === "/stats" && userId.toString() === adminId) {
-    // Use cached stats
+    const userCount = Object.keys(cachedStats.users).length;
     return bot.sendMessage(
       chatId,
-      `📊 **Bot Statistics**\n\nTotal Users: ${cachedStats.users.length}\nTotal Downloads: ${cachedStats.total_downloads}`,
+      `📊 **Bot Statistics**\n\nTotal Users: ${userCount}\nTotal Downloads: ${cachedStats.total_downloads}`,
       { parse_mode: "Markdown" }
     );
   }
@@ -139,21 +160,17 @@ bot.on("message", async (msg) => {
   // 1. Detection
   const isInstagramUrl =
     /instagram\.com\/(p|reel|reels|tv|stories|share)\//.test(messageText);
-  const isUsername = /^@[a-zA-Z0-9._]+$/.test(messageText);
   const isStoryCommand = messageText.startsWith("/story");
+  const isPfpCommand = messageText.startsWith("/pfp");
+  const isUsername = /^@[a-zA-Z0-9._]+$/.test(messageText);
 
-  if (isInstagramUrl || isUsername || isStoryCommand) {
-    bot.sendMessage(
-      chatId,
-      `Processing ${isUsername || isStoryCommand ? "stories" : "link"}... ⏳`
-    );
+  if (isInstagramUrl || isStoryCommand) {
+    bot.sendMessage(chatId, `Processing ${isStoryCommand ? "stories" : "link"}... ⏳`);
 
     try {
       let result;
-      if (isUsername || isStoryCommand) {
-        const username = isUsername
-          ? messageText.replace("@", "")
-          : messageText.replace("/story", "").trim().replace("@", "");
+      if (isStoryCommand) {
+        const username = messageText.replace("/story", "").trim().replace("@", "");
 
         if (!username)
           return bot.sendMessage(
@@ -172,29 +189,78 @@ bot.on("message", async (msg) => {
         return bot.sendMessage(chatId, "Sorry, I couldn't find any media.");
       }
 
-      updateStats(userId);
+      updateStats(userId, messageText);
       const caption = formatCaption(result);
 
       await sendMediaResult(chatId, media, caption, messageText);
     } catch (err) {
       console.error("Bot Error:", err.message);
       const msg = err.message.toLowerCase();
-      if (
-        msg.includes("does not exist") ||
-        msg.includes("private") ||
-        msg.includes("restricted")
-      ) {
-        bot.sendMessage(chatId, `❌ **Error:** ${err.message}`, {
-          parse_mode: "Markdown",
-        });
-      } else {
-        bot.sendMessage(
-          chatId,
-          "📉 **Could not fetch media.**\n\nSometimes things just don't work out.",
-          { parse_mode: "Markdown" }
-        );
+
+      let userMessage = "I ran into an unexpected problem and couldn't fetch the media. Please try again later."; // Default message
+
+      if (msg.includes("private") || msg.includes("restricted")) {
+        userMessage = "This content is from a private account and I can't access it.";
+      } else if (msg.includes("does not exist") || msg.includes("not found") || msg.includes("parse shortcode") || msg.includes("invalid story link")) {
+        userMessage = "The link you sent seems to be invalid or the content has been deleted. Please check the link and try again.";
+      } else if (msg.includes("story expired")) {
+        userMessage = "This story is no longer available.";
+      } else if (msg.includes("no active stories")) {
+        userMessage = "This user doesn't have any active stories right now.";
+      } else if (msg.includes("cookies missing") || msg.includes("unauthorized") || msg.includes("failed instagram request")) {
+        userMessage = "I'm having some technical difficulties connecting to Instagram at the moment. Please try again in a little while.";
       }
+
+      bot.sendMessage(chatId, `❌ **Request Failed**\n\n${userMessage}`, {
+        parse_mode: "Markdown",
+      });
     }
+  } else if (isPfpCommand || isUsername) {
+    bot.sendMessage(chatId, `Fetching profile picture... ⏳`);
+    try {
+      const username = messageText.replace("/pfp", "").trim().replace("@", "");
+      if (!username) {
+        return bot.sendMessage(chatId, "Please provide a username, e.g. `/pfp cristiano` or `@cristiano`", {
+          parse_mode: "HTML",
+        });
+      }
+
+      const pfpData = await getProfilePictureByUsername(username);
+
+      const caption = `👤 <b>${pfpData.fullname}</b> (@${pfpData.username})${pfpData.is_private ? " (Private)" : ""}`;
+
+      bot.sendPhoto(chatId, pfpData.url, {
+        caption: caption,
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: [
+            [{ text: "⬇️ Download HD", url: pfpData.url }],
+          ],
+        },
+      });
+    } catch (err) {
+      console.error("PFP Error:", err.message);
+      const msg = err.message.toLowerCase();
+      let userMessage = "I couldn't fetch the profile picture. Please try again later.";
+
+      if (msg.includes("does not exist") || msg.includes("not found")) {
+        userMessage = "I couldn't find a user with that username. Please check it and try again.";
+      } else if (msg.includes("restricted")) {
+        userMessage = "I am unable to access this user's profile.";
+      }
+
+      bot.sendMessage(chatId, `❌ **Request Failed**\n\n${userMessage}`, { parse_mode: "Markdown" });
+    }
+  } else if (messageText === "/history") {
+    const user = userId.toString();
+    const userHistory = cachedStats.users[user] ? cachedStats.users[user].history : [];
+
+    if (userHistory.length === 0) {
+      return bot.sendMessage(chatId, "You have no download history yet.");
+    }
+
+    const historyLinks = userHistory.map((link, index) => `${index + 1}. ${link}`).join("\n");
+    bot.sendMessage(chatId, `📜 <b>Your Last 5 Downloads:</b>\n\n${historyLinks}`, { parse_mode: "HTML" });
   } else if (messageText === "/start" || messageText === "/help") {
     const welcomeMessage = `
 👋 <b>Welcome to Instagram Downloader Bot!</b>
@@ -260,6 +326,11 @@ async function sendMediaResult(chatId, media, caption, originalText) {
   };
 
   if (media.length === 1) {
+    opts.reply_markup.inline_keyboard[0].push({
+      text: "⬇️ Download",
+      url: media[0].url,
+    });
+
     const item = media[0];
     if (item.type === "video") {
       await bot.sendVideo(chatId, item.url, opts);
@@ -282,6 +353,25 @@ async function sendMediaResult(chatId, media, caption, originalText) {
 
     for (const chunk of chunks) {
       await bot.sendMediaGroup(chatId, chunk);
+    }
+
+    const downloadButtons = media.map((item, idx) => ({
+      text: `⬇️ Download Item ${idx + 1}`,
+      url: item.url,
+    }));
+
+    const buttonRows = [];
+    for (let i = 0; i < downloadButtons.length; i += 2) {
+      buttonRows.push(downloadButtons.slice(i, i + 2));
+    }
+
+    if (buttonRows.length > 0) {
+      await bot.sendMessage(chatId, "<b>Click to download:</b>", {
+        parse_mode: "HTML",
+        reply_markup: {
+          inline_keyboard: buttonRows,
+        },
+      });
     }
   }
 }
