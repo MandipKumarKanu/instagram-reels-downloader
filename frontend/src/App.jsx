@@ -30,9 +30,8 @@ function App() {
   const handleDownload = async () => {
     if (!url) return;
     const isInstagram = url.includes("instagram.com");
-    const isFacebook = url.includes("facebook.com") || url.includes("fb.watch");
-    if (!isInstagram && !isFacebook) {
-      setError("Invalid link. Instagram or Facebook only.");
+    if (!isInstagram) {
+      setError("Invalid link. Instagram only.");
       return;
     }
 
@@ -70,14 +69,14 @@ function App() {
           </div>
 
           <div className="hero">
-            <p className="eyebrow">Instagram & Facebook Downloader</p>
+            <p className="eyebrow">Instagram Downloader</p>
             <h1>
               Reel & Post Saver
               <span className="dot" />
             </h1>
             <p className="lede">
-              Paste an Instagram or Facebook link to download reels, videos, or
-              photos instantly.
+              Paste an Instagram link to download reels, videos, or photos
+              instantly.
             </p>
             <div className="chips">
               <span>Fast</span>
