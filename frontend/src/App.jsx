@@ -2,6 +2,41 @@ import { useState } from "react";
 import "./App.css";
 import { FaDownload, FaBolt } from "react-icons/fa";
 
+// Direct browser-based fetching using Cobalt API (CORS-enabled)
+async function fetchViaCobalt(url) {
+  const response = await fetch("https://api.cobalt.tools/", {
+    method: "POST",
+    headers: {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      url: url,
+      downloadMode: "auto",
+    }),
+  });
+
+  const data = await response.json();
+  if (data.status === "error") throw new Error(data.text || "Cobalt failed");
+  if (data.status === "redirect" || data.status === "tunnel") {
+    return { url_list: [data.url], media_details: [{ type: "video", url: data.url }] };
+  }
+  if (data.status === "picker" && data.picker) {
+    const urls = data.picker.map((p) => p.url);
+    return { url_list: urls, media_details: urls.map((u) => ({ type: "video", url: u })) };
+  }
+  throw new Error("Unexpected response");
+}
+
+// Fallback using backend
+async function fetchViaBackend(url) {
+  const backendUrl = import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
+  const response = await fetch(`${backendUrl}/api/download?url=${encodeURIComponent(url)}`);
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.error || "Backend failed");
+  return result;
+}
+
 function App() {
   const [url, setUrl] = useState("");
   const [loading, setLoading] = useState(false);
@@ -11,7 +46,7 @@ function App() {
   const handleDownload = async () => {
     if (!url) return;
     if (!url.includes("instagram.com")) {
-      setError("ERROR: INVALID LINK. INSTAGRAM ONLY.");
+      setError("Invalid link. Instagram only.");
       return;
     }
 
@@ -19,25 +54,31 @@ function App() {
     setError("");
     setData(null);
 
-    try {
-      const backendUrl =
-        import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
-      const response = await fetch(
-        `${backendUrl}/api/download?url=${encodeURIComponent(url)}`
-      );
-      const result = await response.json();
+    // Try Cobalt first (direct from browser), then fallback to backend
+    const methods = [
+      { name: "Cobalt", fn: () => fetchViaCobalt(url) },
+      { name: "Backend", fn: () => fetchViaBackend(url) },
+    ];
 
-      if (!response.ok) {
-        throw new Error(result.error || "FETCH FAILED");
+    let lastError;
+    for (const method of methods) {
+      try {
+        console.log(`Trying ${method.name}...`);
+        const result = await method.fn();
+        if (result && result.url_list && result.url_list.length > 0) {
+          console.log(`${method.name} succeeded!`);
+          setData(result);
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.log(`${method.name} failed:`, err.message);
+        lastError = err;
       }
-
-      setData(result);
-    } catch (err) {
-      console.error(err);
-      setError(err.message.toUpperCase() || "SYSTEM MALFUNCTION");
-    } finally {
-      setLoading(false);
     }
+
+    setError(lastError?.message || "Failed to fetch video");
+    setLoading(false);
   };
 
   return (
