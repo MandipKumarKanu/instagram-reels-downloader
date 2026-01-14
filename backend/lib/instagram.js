@@ -2,17 +2,22 @@ const axios = require("axios");
 const qs = require("qs");
 
 async function instagramGetUrl(url_media) {
-  return new Promise(async (resolve, reject) => {
-    try {
-      url_media = await checkRedirect(url_media);
-      const SHORTCODE = getShortcode(url_media);
-      const INSTAGRAM_REQUEST = await instagramRequest(SHORTCODE);
-      const OUTPUT_DATA = createOutputData(INSTAGRAM_REQUEST);
-      resolve(OUTPUT_DATA);
-    } catch (err) {
-      reject(err);
+  try {
+    url_media = await checkRedirect(url_media);
+
+    if (url_media.includes("/stories/")) {
+      const storyId = getStoryId(url_media);
+      const storyData = await getStoryData(storyId);
+      return storyData;
     }
-  });
+
+    const SHORTCODE = getShortcode(url_media);
+    const INSTAGRAM_REQUEST = await instagramRequest(SHORTCODE);
+    const OUTPUT_DATA = createOutputData(INSTAGRAM_REQUEST);
+    return OUTPUT_DATA;
+  } catch (err) {
+    throw err;
+  }
 }
 
 function getCookies() {
@@ -29,7 +34,7 @@ async function checkRedirect(url) {
 
   if (url.includes("/share/") || url.includes("share")) {
     try {
-      let res = await axios.get(url, { headers });
+      let res = await axios.get(url, { headers, timeout: 15000 });
       return res.request.res.responseUrl || res.request.path || url;
     } catch (e) {
       return url;
@@ -52,6 +57,166 @@ function getShortcode(url) {
   }
 }
 
+function getStoryId(url) {
+  try {
+    const match = url.match(/\/stories\/[^/]+\/(\d+)/);
+    if (match && match[1]) {
+      return match[1];
+    }
+    throw new Error("Could not parse story ID");
+  } catch (err) {
+    throw new Error(`Invalid Story Link: ${err.message}`);
+  }
+}
+
+async function getStoryData(storyId) {
+  try {
+    const cookies = getCookies();
+    if (!cookies) throw new Error("Cookies missing. Cannot fetch stories.");
+
+    const config = {
+      method: "GET",
+      url: `https://i.instagram.com/api/v1/media/${storyId}/info/`,
+      headers: {
+        "User-Agent":
+          "Instagram 219.0.0.12.117 Android (31/12; 320dpi; 720x1280; samsung; SM-G960F; starlte; samsungexynos9810; en_US; 340910260)",
+        Cookie: cookies,
+      },
+      timeout: 15000,
+    };
+
+    const { data } = await axios.request(config);
+    if (!data.items || data.items.length === 0) {
+      throw new Error("Story expired or account is private.");
+    }
+
+    const item = data.items[0];
+    const media_details = [];
+
+    if (item.media_type === 1) {
+      media_details.push({
+        type: "image",
+        url: item.image_versions2.candidates[0].url,
+        dimensions: {
+          height: item.image_versions2.candidates[0].height,
+          width: item.image_versions2.candidates[0].width,
+        },
+      });
+    } else if (item.media_type === 2) {
+      media_details.push({
+        type: "video",
+        url: item.video_versions[0].url,
+        thumbnail: item.image_versions2.candidates[0].url,
+        dimensions: {
+          height: item.video_versions[0].height,
+          width: item.video_versions[0].width,
+        },
+      });
+    }
+
+    return {
+      results_number: 1,
+      url_list: [media_details[0].url],
+      post_info: {
+        owner_username: item.user.username,
+        owner_fullname: item.user.full_name,
+        caption: item.caption ? item.caption.text : "",
+      },
+      media_details: media_details,
+    };
+  } catch (err) {
+    throw new Error(`Story Fetch Failed: ${err.message}`);
+  }
+}
+
+async function getStoriesByUsername(username) {
+  try {
+    const userId = await getUserId(username);
+    const cookies = getCookies();
+    if (!cookies) throw new Error("Cookies missing.");
+
+    const config = {
+      method: "GET",
+      url: `https://i.instagram.com/api/v1/feed/reels_media/?reel_ids=${userId}`,
+      headers: {
+        "User-Agent":
+          "Instagram 219.0.0.12.117 Android (31/12; 320dpi; 720x1280; samsung; SM-G960F; starlte; samsungexynos9810; en_US; 340910260)",
+        Cookie: cookies,
+      },
+      timeout: 15000,
+    };
+
+    const { data } = await axios.request(config);
+    const reel = data.reels[userId];
+    if (!reel || !reel.items || reel.items.length === 0) {
+      throw new Error("No active stories found for this user.");
+    }
+
+    const media_details = reel.items.map((item) => {
+      if (item.media_type === 1) {
+        return {
+          type: "image",
+          url: item.image_versions2.candidates[0].url,
+          dimensions: {
+            height: item.image_versions2.candidates[0].height,
+            width: item.image_versions2.candidates[0].width,
+          },
+        };
+      } else {
+        return {
+          type: "video",
+          url: item.video_versions[0].url,
+          thumbnail: item.image_versions2.candidates[0].url,
+          dimensions: {
+            height: item.video_versions[0].height,
+            width: item.video_versions[0].width,
+          },
+        };
+      }
+    });
+
+    return {
+      results_number: media_details.length,
+      post_info: {
+        owner_username: reel.user.username,
+        owner_fullname: reel.user.full_name,
+        caption: `Current Stories of ${reel.user.username}`,
+      },
+      media_details: media_details,
+    };
+  } catch (err) {
+    throw new Error(`Failed to fetch stories: ${err.message}`);
+  }
+}
+
+async function getUserId(username) {
+  try {
+    const cookies = getCookies();
+    // Using the web profile endpoint which is more compatible with browser cookies
+    const config = {
+      method: "GET",
+      url: `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
+      headers: {
+        "User-Agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        Cookie: cookies,
+        "X-IG-App-ID": "936619743392459", // Standard App ID for Web
+      },
+      timeout: 15000,
+    };
+    const { data } = await axios.request(config);
+    if (!data.data || !data.data.user || !data.data.user.id) {
+      throw new Error("User not found or profile is restricted.");
+    }
+    return data.data.user.id;
+  } catch (err) {
+    if (err.response && err.response.status === 404) {
+      throw new Error(`Instagram user "${username}" does not exist.`);
+    }
+    throw new Error(`Could not find user ${username}: ${err.message}`);
+  }
+}
+
 async function getCSRFToken() {
   try {
     // 1. Try to extract from environment variable cookies first
@@ -70,6 +235,7 @@ async function getCSRFToken() {
       method: "GET",
       url: "https://www.instagram.com/",
       headers: {},
+      timeout: 15000,
     };
 
     // If we have some cookies, send them, maybe we get a fresh csrf
@@ -118,6 +284,7 @@ async function instagramRequest(shortcode) {
         "X-CSRFToken": token,
       },
       data: dataBody,
+      timeout: 15000,
     };
 
     const cookies = getCookies();
@@ -229,4 +396,7 @@ function createOutputData(requestData) {
   }
 }
 
-module.exports = { instagramGetUrl };
+module.exports = {
+  instagramGetUrl,
+  getStoriesByUsername,
+};
