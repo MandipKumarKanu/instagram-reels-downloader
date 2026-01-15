@@ -5,6 +5,7 @@ const {
   instagramGetUrl,
   getStoriesByUsername,
   getProfilePictureByUsername,
+  setErrorMonitor,
 } = require("./lib/instagram");
 
 const token = process.env.TELEGRAM_BOT_TOKEN;
@@ -91,6 +92,39 @@ initStats();
 
 console.log("Telegram bot is initialized...");
 
+// Monitoring System: Alert admin on critical errors
+const errorLog = [];
+const MAX_ERROR_LOG = 50;
+
+function logError(errorInfo) {
+  errorLog.unshift({
+    timestamp: new Date().toISOString(),
+    ...errorInfo,
+  });
+
+  if (errorLog.length > MAX_ERROR_LOG) {
+    errorLog.pop();
+  }
+
+  // Alert admin for critical errors
+  if (adminId && errorInfo.type === "instagram_api_failure") {
+    bot
+      .sendMessage(
+        adminId,
+        `🚨 <b>Critical Error Alert</b>\n\n` +
+          `<b>Type:</b> ${errorInfo.type}\n` +
+          `<b>Error:</b> ${errorInfo.error}\n` +
+          `<b>Attempts:</b> ${errorInfo.attempts}\n` +
+          `<b>Time:</b> ${new Date().toLocaleString()}`,
+        { parse_mode: "HTML" }
+      )
+      .catch(() => {}); // Silently fail if admin unreachable
+  }
+}
+
+// Connect monitoring to Instagram module
+setErrorMonitor(logError);
+
 // Helper to format caption
 function formatCaption(result) {
   const info = result.post_info;
@@ -116,7 +150,7 @@ function formatCaption(result) {
 // Rate Limiter: Prevent spam/abuse
 const rateLimitMap = new Map();
 const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
-const MAX_REQUESTS_PER_WINDOW = 5;
+const MAX_REQUESTS_PER_WINDOW = 3;
 
 function checkRateLimit(userId) {
   const now = Date.now();

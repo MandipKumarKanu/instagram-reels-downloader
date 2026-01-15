@@ -45,6 +45,54 @@ function getMobileInstagramUA() {
   return mobileAppUAs[Math.floor(Math.random() * mobileAppUAs.length)];
 }
 
+// Retry logic with exponential backoff
+let errorMonitorCallback = null;
+
+function setErrorMonitor(callback) {
+  errorMonitorCallback = callback;
+}
+
+async function retryWithBackoff(fn, maxRetries = 3) {
+  let lastError;
+
+  for (let attempt = 0; attempt < maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+
+      // Don't retry on auth errors (401, 403, 404)
+      if (error.response && [401, 403, 404].includes(error.response.status)) {
+        throw error;
+      }
+
+      // Don't retry on last attempt
+      if (attempt === maxRetries - 1) {
+        // Alert monitoring system
+        if (errorMonitorCallback) {
+          errorMonitorCallback({
+            type: "instagram_api_failure",
+            error: error.message,
+            attempts: maxRetries,
+          });
+        }
+        throw error;
+      }
+
+      // Exponential backoff: 1s, 2s, 4s
+      const delay = Math.pow(2, attempt) * 1000;
+      console.log(
+        `⚠️ Request failed (attempt ${
+          attempt + 1
+        }/${maxRetries}). Retrying in ${delay}ms...`
+      );
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+
+  throw lastError;
+}
+
 async function instagramGetUrl(url_media) {
   try {
     url_media = await checkRedirect(url_media);
@@ -140,7 +188,7 @@ async function getStoryData(storyId) {
       timeout: 15000,
     };
 
-    const { data } = await axios.request(config);
+    const { data } = await retryWithBackoff(() => axios.request(config));
     if (!data.items || data.items.length === 0) {
       throw new Error("Story expired or account is private.");
     }
@@ -200,7 +248,7 @@ async function getStoriesByUsername(username) {
       timeout: 15000,
     };
 
-    const { data } = await axios.request(config);
+    const { data } = await retryWithBackoff(() => axios.request(config));
     const reel = data.reels[userId];
     if (!reel || !reel.items || reel.items.length === 0) {
       throw new Error("No active stories found for this user.");
@@ -257,7 +305,7 @@ async function getUserId(username) {
       },
       timeout: 15000,
     };
-    const { data } = await axios.request(config);
+    const { data } = await retryWithBackoff(() => axios.request(config));
     if (!data.data || !data.data.user || !data.data.user.id) {
       throw new Error("User not found or profile is restricted.");
     }
@@ -345,7 +393,7 @@ async function instagramRequest(shortcode) {
       config.headers["Cookie"] = cookies;
     }
 
-    const { data } = await axios.request(config);
+    const { data } = await retryWithBackoff(() => axios.request(config));
 
     if (!data.data || !data.data.xdt_shortcode_media) {
       console.error("Instagram Response Error:", JSON.stringify(data));
@@ -462,7 +510,7 @@ async function getProfilePictureByUsername(username) {
       },
       timeout: 15000,
     };
-    const { data } = await axios.request(config);
+    const { data } = await retryWithBackoff(() => axios.request(config));
     if (!data.data || !data.data.user) {
       throw new Error("User not found or profile is restricted.");
     }
@@ -486,4 +534,5 @@ module.exports = {
   instagramGetUrl,
   getStoriesByUsername,
   getProfilePictureByUsername,
+  setErrorMonitor,
 };
