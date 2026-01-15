@@ -5,6 +5,8 @@ const {
   instagramGetUrl,
   getStoriesByUsername,
   getProfilePictureByUsername,
+  getHighlightsByUsername,
+  getPostsByUsername,
   setErrorMonitor,
 } = require("./lib/instagram");
 
@@ -72,20 +74,26 @@ function updateStats(userId, downloadLink) {
   if (!cachedStats.users[user]) {
     cachedStats.users[user] = {
       history: [],
+      total_downloads: 0,
     };
   }
 
-  // Add to history and keep it at 5 items
   cachedStats.users[user].history.unshift(downloadLink);
   cachedStats.users[user].history = cachedStats.users[user].history.slice(0, 5);
+  cachedStats.users[user].total_downloads =
+    (cachedStats.users[user].total_downloads || 0) + 1;
 
   cachedStats.total_downloads = (cachedStats.total_downloads || 0) + 1;
   saveStatsBackground();
 }
 
 // Create a bot
-// Create a bot
 const bot = new TelegramBot(token, { polling: true });
+let botId;
+bot.getMe().then((me) => {
+  botId = me.id;
+  console.log(`Bot authorized as @${me.username}`);
+});
 
 // Initialize Stats on Start
 initStats();
@@ -178,12 +186,52 @@ function checkRateLimit(userId) {
   return true; // Allowed
 }
 
+const userPrompts = {};
+
+// Handler for button clicks
+bot.on("callback_query", (callbackQuery) => {
+  const { data, message } = callbackQuery;
+  const chatId = message.chat.id;
+
+  const prompts = {
+    prompt_story: "story",
+    prompt_highlights: "highlights",
+    prompt_posts: "posts",
+    prompt_pfp: "pfp",
+  };
+
+  if (prompts[data]) {
+    userPrompts[chatId] = prompts[data];
+    bot.sendMessage(
+      chatId,
+      `OK, please send me the Instagram username for the ${prompts[data]}.`,
+      {
+        reply_markup: {
+          force_reply: true,
+        },
+      }
+    );
+  }
+});
+
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
-  const messageText = msg.text;
+  let messageText = msg.text;
 
   if (!messageText) return;
+
+  // Check if this is a reply to a prompt
+  if (
+    msg.reply_to_message &&
+    msg.reply_to_message.from.id === botId &&
+    userPrompts[chatId]
+  ) {
+    const command = userPrompts[chatId];
+    const username = messageText.trim().replace("@", "");
+    messageText = `/${command} ${username}`;
+    delete userPrompts[chatId]; // Clear the prompt state
+  }
 
   // Admin Broadcast
   if (messageText.startsWith("/broadcast") && userId.toString() === adminId) {
@@ -227,11 +275,19 @@ bot.on("message", async (msg) => {
   const isInstagramUrl =
     /instagram\.com\/(p|reel|reels|tv|stories|share)\//.test(messageText);
   const isStoryCommand = messageText.startsWith("/story");
+  const isHighlightCommand = messageText.startsWith("/highlights");
+  const isPostsCommand = messageText.startsWith("/posts");
   const isPfpCommand = messageText.startsWith("/pfp");
   const isUsername = /^@[a-zA-Z0-9._]+$/.test(messageText);
 
   // Check rate limit for Instagram requests (not for /start, /help, etc.)
-  if (isInstagramUrl || isStoryCommand || isPfpCommand) {
+  if (
+    isInstagramUrl ||
+    isStoryCommand ||
+    isPfpCommand ||
+    isHighlightCommand ||
+    isPostsCommand
+  ) {
     if (!checkRateLimit(userId)) {
       return bot.sendMessage(
         chatId,
@@ -241,28 +297,43 @@ bot.on("message", async (msg) => {
     }
   }
 
-  if (isInstagramUrl || isStoryCommand) {
-    bot.sendMessage(
-      chatId,
-      `Processing ${isStoryCommand ? "stories" : "link"}... ⏳`
-    );
+  if (isInstagramUrl || isStoryCommand || isHighlightCommand || isPostsCommand) {
+    const commandType = isStoryCommand
+      ? "stories"
+      : isHighlightCommand
+      ? "highlights"
+      : isPostsCommand
+      ? "posts"
+      : "link";
+    bot.sendMessage(chatId, `Processing ${commandType}... ⏳`);
 
     try {
       let result;
-      if (isStoryCommand) {
+      if (isStoryCommand || isHighlightCommand || isPostsCommand) {
+        const command = isStoryCommand
+          ? "/story"
+          : isHighlightCommand
+          ? "/highlights"
+          : "/posts";
         const username = messageText
-          .replace("/story", "")
+          .replace(command, "")
           .trim()
           .replace("@", "");
 
         if (!username)
           return bot.sendMessage(
             chatId,
-            "Please provide a username, e.g. `/story cristiano`",
-            { parse_mode: "HTML" }
+            `Please provide a username, e.g. \`${command} cristiano\``,
+            { parse_mode: "Markdown" }
           );
 
-        result = await getStoriesByUsername(username);
+        if (isStoryCommand) {
+          result = await getStoriesByUsername(username);
+        } else if (isHighlightCommand) {
+          result = await getHighlightsByUsername(username);
+        } else {
+          result = await getPostsByUsername(username);
+        }
       } else {
         result = await instagramGetUrl(messageText);
       }
@@ -298,6 +369,10 @@ bot.on("message", async (msg) => {
         userMessage = "This story is no longer available.";
       } else if (msg.includes("no active stories")) {
         userMessage = "This user doesn't have any active stories right now.";
+      } else if (msg.includes("no highlights found")) {
+        userMessage = "This user doesn't have any highlights.";
+      } else if (msg.includes("no posts found")) {
+        userMessage = "This user doesn't have any posts, or their account is private.";
       } else if (
         msg.includes("cookies missing") ||
         msg.includes("unauthorized") ||
@@ -359,20 +434,21 @@ bot.on("message", async (msg) => {
     }
   } else if (messageText === "/history") {
     const user = userId.toString();
-    const userHistory = cachedStats.users[user]
-      ? cachedStats.users[user].history
-      : [];
+    const userData = cachedStats.users[user];
 
-    if (userHistory.length === 0) {
+    if (!userData || !userData.history || userData.history.length === 0) {
       return bot.sendMessage(chatId, "You have no download history yet.");
     }
 
-    const historyLinks = userHistory
+    const historyLinks = userData.history
       .map((link, index) => `${index + 1}. ${link}`)
       .join("\n");
+
+    const totalUserDownloads = userData.total_downloads || 0;
+
     bot.sendMessage(
       chatId,
-      `📜 <b>Your Last 5 Downloads:</b>\n\n${historyLinks}`,
+      `📜 <b>Your Last 5 Downloads:</b>\n\n${historyLinks}\n\n📈 <b>Total Downloads:</b> ${totalUserDownloads}`,
       { parse_mode: "HTML" }
     );
   } else if (messageText === "/start" || messageText === "/help") {
@@ -383,7 +459,9 @@ I can help you download content from Instagram effortlessly. 🚀
 
 <b>What I can do:</b>
 📸 <b>Posts & Reels</b>: Just send the link.
-📖 <b>Stories</b>: Paste a specific story link, or use <code>/story username</code>.
+📖 <b>Stories</b>: Use <code>/story username</code>.
+✨ <b>Highlights</b>: Use <code>/highlights username</code>.
+📂 <b>Posts</b>: Use <code>/posts username</code> to get the latest 5 posts.
 📺 <b>IGTV</b>: Just send the link.
 
 <b>How to use:</b>
@@ -395,7 +473,24 @@ I can help you download content from Instagram effortlessly. 🚀
 
 👇 <b>Try it now by sending a link!</b>
     `;
-    bot.sendMessage(chatId, welcomeMessage, { parse_mode: "HTML" });
+    bot.sendMessage(chatId, welcomeMessage, {
+      parse_mode: "HTML",
+      reply_markup: {
+        inline_keyboard: [
+          [
+            { text: "Download Story", callback_data: "prompt_story" },
+            { text: "Download Highlights", callback_data: "prompt_highlights" },
+          ],
+          [
+            { text: "Download Posts", callback_data: "prompt_posts" },
+            {
+              text: "Download Profile Picture",
+              callback_data: "prompt_pfp",
+            },
+          ],
+        ],
+      },
+    });
   } else {
     // Show immediate feedback
     bot.sendMessage(chatId, "Processing... ⏳");
