@@ -83,7 +83,8 @@ function updateStats(userId, downloadLink) {
 }
 
 // Create a bot
-const bot = new TelegramBot(token); // Polling is disabled
+// Create a bot
+const bot = new TelegramBot(token, { polling: true });
 
 // Initialize Stats on Start
 initStats();
@@ -106,7 +107,8 @@ function formatCaption(result) {
         .replace(/>/g, "&gt;") + "..."
     : "No caption";
 
-  const saveInstruction = "\n\n<i>To save: open the media, tap the 3 dots (top right), and select 'Save to gallery'.</i>";
+  const saveInstruction =
+    "\n\n<i>To save: open the media, tap the 3 dots (top right), and select 'Save to gallery'.</i>";
 
   return `👤 <b>Author</b>: ${author}\n📝 <b>Capt</b>: ${capt}\n\nDownloaded via @ig_reels_posts_downloader_bot${saveInstruction}`;
 }
@@ -129,10 +131,7 @@ bot.on("message", async (msg) => {
       );
 
     const userIds = Object.keys(cachedStats.users);
-    bot.sendMessage(
-      chatId,
-      `Starting broadcast to ${userIds.length} users...`
-    );
+    bot.sendMessage(chatId, `Starting broadcast to ${userIds.length} users...`);
 
     let success = 0;
     for (const uId of userIds) {
@@ -167,12 +166,18 @@ bot.on("message", async (msg) => {
   const isUsername = /^@[a-zA-Z0-9._]+$/.test(messageText);
 
   if (isInstagramUrl || isStoryCommand) {
-    bot.sendMessage(chatId, `Processing ${isStoryCommand ? "stories" : "link"}... ⏳`);
+    bot.sendMessage(
+      chatId,
+      `Processing ${isStoryCommand ? "stories" : "link"}... ⏳`
+    );
 
     try {
       let result;
       if (isStoryCommand) {
-        const username = messageText.replace("/story", "").trim().replace("@", "");
+        const username = messageText
+          .replace("/story", "")
+          .trim()
+          .replace("@", "");
 
         if (!username)
           return bot.sendMessage(
@@ -199,18 +204,31 @@ bot.on("message", async (msg) => {
       console.error("Bot Error:", err.message);
       const msg = err.message.toLowerCase();
 
-      let userMessage = "I ran into an unexpected problem and couldn't fetch the media. Please try again later."; // Default message
+      let userMessage =
+        "I ran into an unexpected problem and couldn't fetch the media. Please try again later."; // Default message
 
       if (msg.includes("private") || msg.includes("restricted")) {
-        userMessage = "This content is from a private account and I can't access it.";
-      } else if (msg.includes("does not exist") || msg.includes("not found") || msg.includes("parse shortcode") || msg.includes("invalid story link")) {
-        userMessage = "The link you sent seems to be invalid or the content has been deleted. Please check the link and try again.";
+        userMessage =
+          "This content is from a private account and I can't access it.";
+      } else if (
+        msg.includes("does not exist") ||
+        msg.includes("not found") ||
+        msg.includes("parse shortcode") ||
+        msg.includes("invalid story link")
+      ) {
+        userMessage =
+          "The link you sent seems to be invalid or the content has been deleted. Please check the link and try again.";
       } else if (msg.includes("story expired")) {
         userMessage = "This story is no longer available.";
       } else if (msg.includes("no active stories")) {
         userMessage = "This user doesn't have any active stories right now.";
-      } else if (msg.includes("cookies missing") || msg.includes("unauthorized") || msg.includes("failed instagram request")) {
-        userMessage = "I'm having some technical difficulties connecting to Instagram at the moment. Please try again in a little while.";
+      } else if (
+        msg.includes("cookies missing") ||
+        msg.includes("unauthorized") ||
+        msg.includes("failed instagram request")
+      ) {
+        userMessage =
+          "I'm having some technical difficulties connecting to Instagram at the moment. Please try again in a little while.";
       }
 
       bot.sendMessage(chatId, `❌ **Request Failed**\n\n${userMessage}`, {
@@ -222,48 +240,65 @@ bot.on("message", async (msg) => {
     try {
       const username = messageText.replace("/pfp", "").trim().replace("@", "");
       if (!username) {
-        return bot.sendMessage(chatId, "Please provide a username, e.g. `/pfp cristiano`", {
-          parse_mode: "HTML",
-        });
+        return bot.sendMessage(
+          chatId,
+          "Please provide a username, e.g. `/pfp cristiano`",
+          {
+            parse_mode: "HTML",
+          }
+        );
       }
 
       const pfpData = await getProfilePictureByUsername(username);
 
-      const saveInstruction = "\n\n<i>To save: open the media, tap the 3 dots (top right), and select 'Save to gallery'.</i>";
-      const caption = `👤 <b>${pfpData.fullname}</b> (@${pfpData.username})${pfpData.is_private ? " (Private)" : ""}${saveInstruction}`;
+      const saveInstruction =
+        "\n\n<i>To save: open the media, tap the 3 dots (top right), and select 'Save to gallery'.</i>";
+      const caption = `👤 <b>${pfpData.fullname}</b> (@${pfpData.username})${
+        pfpData.is_private ? " (Private)" : ""
+      }${saveInstruction}`;
 
       bot.sendPhoto(chatId, pfpData.url, {
         caption: caption,
         parse_mode: "HTML",
         reply_markup: {
-          inline_keyboard: [
-            [{ text: "🔗 View Full Size", url: pfpData.url }],
-          ],
+          inline_keyboard: [[{ text: "🔗 View Full Size", url: pfpData.url }]],
         },
       });
     } catch (err) {
       console.error("PFP Error:", err.message);
       const msg = err.message.toLowerCase();
-      let userMessage = "I couldn't fetch the profile picture. Please try again later.";
+      let userMessage =
+        "I couldn't fetch the profile picture. Please try again later.";
 
       if (msg.includes("does not exist") || msg.includes("not found")) {
-        userMessage = "I couldn't find a user with that username. Please check it and try again.";
+        userMessage =
+          "I couldn't find a user with that username. Please check it and try again.";
       } else if (msg.includes("restricted")) {
         userMessage = "I am unable to access this user's profile.";
       }
 
-      bot.sendMessage(chatId, `❌ **Request Failed**\n\n${userMessage}`, { parse_mode: "Markdown" });
+      bot.sendMessage(chatId, `❌ **Request Failed**\n\n${userMessage}`, {
+        parse_mode: "Markdown",
+      });
     }
   } else if (messageText === "/history") {
     const user = userId.toString();
-    const userHistory = cachedStats.users[user] ? cachedStats.users[user].history : [];
+    const userHistory = cachedStats.users[user]
+      ? cachedStats.users[user].history
+      : [];
 
     if (userHistory.length === 0) {
       return bot.sendMessage(chatId, "You have no download history yet.");
     }
 
-    const historyLinks = userHistory.map((link, index) => `${index + 1}. ${link}`).join("\n");
-    bot.sendMessage(chatId, `📜 <b>Your Last 5 Downloads:</b>\n\n${historyLinks}`, { parse_mode: "HTML" });
+    const historyLinks = userHistory
+      .map((link, index) => `${index + 1}. ${link}`)
+      .join("\n");
+    bot.sendMessage(
+      chatId,
+      `📜 <b>Your Last 5 Downloads:</b>\n\n${historyLinks}`,
+      { parse_mode: "HTML" }
+    );
   } else if (messageText === "/start" || messageText === "/help") {
     const welcomeMessage = `
 👋 <b>Welcome to Instagram Downloader Bot!</b>

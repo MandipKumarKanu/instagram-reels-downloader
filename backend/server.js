@@ -3,7 +3,7 @@ const express = require("express");
 const cors = require("cors");
 const axios = require("axios");
 const { instagramGetUrl } = require("./lib/instagram");
-const bot = require("./bot");
+require("./bot");
 
 const app = express();
 app.use(
@@ -83,36 +83,7 @@ app.listen(PORT, () => {
   console.log("Instagram Module: Loaded");
   console.log("Mode: Instagram Only");
 
-  // Set up the webhook
-  // Set up Webhook (Production) or Polling (Local)
-  const publicUrl = process.env.PUBLIC_URL;
-
-  if (publicUrl) {
-    // Production: Use Webhook
-    const webhookUrl = `${publicUrl}/api/webhook`;
-    bot
-      .setWebHook(webhookUrl)
-      .then(() => console.log(`✅ Webhook set to ${webhookUrl}`))
-      .catch((err) => console.error("❌ Failed to set webhook:", err.message));
-  } else {
-    // Local: Use Polling
-    console.log(
-      "⚠️ No PUBLIC_URL found. Assuming Local Dev. Deleting Webhook & Starting Polling..."
-    );
-    bot
-      .deleteWebHook()
-      .then(() => bot.startPolling())
-      .then(() => console.log("✅ Polling started locally"))
-      .catch((err) =>
-        console.error("❌ Failed to switch to polling:", err.message)
-      );
-  }
-});
-
-// Webhook endpoint
-app.post("/api/webhook", (req, res) => {
-  bot.processUpdate(req.body);
-  res.sendStatus(200);
+  // Polling is handled in bot.js
 });
 
 module.exports = app;
