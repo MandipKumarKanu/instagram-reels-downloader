@@ -113,6 +113,37 @@ function formatCaption(result) {
   return `👤 <b>Author</b>: ${author}\n📝 <b>Capt</b>: ${capt}\n\nDownloaded via @ig_reels_posts_downloader_bot${saveInstruction}`;
 }
 
+// Rate Limiter: Prevent spam/abuse
+const rateLimitMap = new Map();
+const RATE_LIMIT_WINDOW = 60 * 1000; // 1 minute
+const MAX_REQUESTS_PER_WINDOW = 5;
+
+function checkRateLimit(userId) {
+  const now = Date.now();
+  const userKey = userId.toString();
+
+  if (!rateLimitMap.has(userKey)) {
+    rateLimitMap.set(userKey, []);
+  }
+
+  const userRequests = rateLimitMap.get(userKey);
+
+  // Remove old requests outside the time window
+  const recentRequests = userRequests.filter(
+    (timestamp) => now - timestamp < RATE_LIMIT_WINDOW
+  );
+
+  if (recentRequests.length >= MAX_REQUESTS_PER_WINDOW) {
+    return false; // Rate limit exceeded
+  }
+
+  // Add current request
+  recentRequests.push(now);
+  rateLimitMap.set(userKey, recentRequests);
+
+  return true; // Allowed
+}
+
 bot.on("message", async (msg) => {
   const chatId = msg.chat.id;
   const userId = msg.from.id;
@@ -164,6 +195,17 @@ bot.on("message", async (msg) => {
   const isStoryCommand = messageText.startsWith("/story");
   const isPfpCommand = messageText.startsWith("/pfp");
   const isUsername = /^@[a-zA-Z0-9._]+$/.test(messageText);
+
+  // Check rate limit for Instagram requests (not for /start, /help, etc.)
+  if (isInstagramUrl || isStoryCommand || isPfpCommand) {
+    if (!checkRateLimit(userId)) {
+      return bot.sendMessage(
+        chatId,
+        "☕ **Whoa there!**\n\nYou've been downloading quite a lot. Please have a cup of tea and try again in a minute. 🍵\n\n_This helps keep the bot running smoothly for everyone._",
+        { parse_mode: "Markdown" }
+      );
+    }
+  }
 
   if (isInstagramUrl || isStoryCommand) {
     bot.sendMessage(
