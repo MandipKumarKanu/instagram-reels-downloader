@@ -321,6 +321,9 @@ I can help you download content from Instagram effortlessly. 🚀
     `;
     bot.sendMessage(chatId, welcomeMessage, { parse_mode: "HTML" });
   } else {
+    // Show immediate feedback
+    bot.sendMessage(chatId, "Processing... ⏳");
+
     try {
       const response = await axios.get("https://naas.isalman.dev/no");
       const excuse =

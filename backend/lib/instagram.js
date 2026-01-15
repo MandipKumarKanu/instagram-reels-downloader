@@ -39,6 +39,12 @@ function getRandomUserAgent() {
   return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
 }
 
+// Get mobile Instagram app UA only (for story/feed endpoints)
+function getMobileInstagramUA() {
+  const mobileAppUAs = USER_AGENTS.filter((ua) => ua.startsWith("Instagram"));
+  return mobileAppUAs[Math.floor(Math.random() * mobileAppUAs.length)];
+}
+
 async function instagramGetUrl(url_media) {
   try {
     url_media = await checkRedirect(url_media);
@@ -128,7 +134,7 @@ async function getStoryData(storyId) {
       method: "GET",
       url: `https://i.instagram.com/api/v1/media/${storyId}/info/`,
       headers: {
-        "User-Agent": getRandomUserAgent(),
+        "User-Agent": getMobileInstagramUA(),
         Cookie: cookies,
       },
       timeout: 15000,
@@ -188,7 +194,7 @@ async function getStoriesByUsername(username) {
       method: "GET",
       url: `https://i.instagram.com/api/v1/feed/reels_media/?reel_ids=${userId}`,
       headers: {
-        "User-Agent": getRandomUserAgent(),
+        "User-Agent": getMobileInstagramUA(),
         Cookie: cookies,
       },
       timeout: 15000,
