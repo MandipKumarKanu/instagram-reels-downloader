@@ -84,14 +84,28 @@ app.listen(PORT, () => {
   console.log("Mode: Instagram Only");
 
   // Set up the webhook
-  const publicUrl = process.env.PUBLIC_URL || "https://instagram-reels-downloader-hazel.vercel.app";
+  // Set up Webhook (Production) or Polling (Local)
+  const publicUrl = process.env.PUBLIC_URL;
+
   if (publicUrl) {
+    // Production: Use Webhook
     const webhookUrl = `${publicUrl}/api/webhook`;
-    bot.setWebHook(webhookUrl)
+    bot
+      .setWebHook(webhookUrl)
       .then(() => console.log(`✅ Webhook set to ${webhookUrl}`))
       .catch((err) => console.error("❌ Failed to set webhook:", err.message));
   } else {
-    console.warn("⚠️ PUBLIC_URL environment variable not set. Webhook not configured.");
+    // Local: Use Polling
+    console.log(
+      "⚠️ No PUBLIC_URL found. Assuming Local Dev. Deleting Webhook & Starting Polling..."
+    );
+    bot
+      .deleteWebHook()
+      .then(() => bot.startPolling())
+      .then(() => console.log("✅ Polling started locally"))
+      .catch((err) =>
+        console.error("❌ Failed to switch to polling:", err.message)
+      );
   }
 });
 
