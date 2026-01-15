@@ -1,6 +1,44 @@
 const axios = require("axios");
 const qs = require("qs");
 
+// User-Agent Pool (Mobile + Desktop)
+const USER_AGENTS = [
+  // Android - Instagram App
+  "Instagram 219.0.0.12.117 Android (31/12; 320dpi; 720x1280; samsung; SM-G960F; starlte; samsungexynos9810; en_US; 340910260)",
+  "Instagram 250.0.0.21.109 Android (30/11; 420dpi; 1080x2340; Xiaomi; Mi 10; umi; qcom; en_US; 400534612)",
+  "Instagram 245.0.0.18.110 Android (29/10; 480dpi; 1080x2280; OnePlus; ONEPLUS A6013; OnePlus6T; qcom; en_US; 389773013)",
+  "Instagram 236.0.0.20.109 Android (32/12; 440dpi; 1080x2400; Google; Pixel 6; oriole; google; en_US; 378629382)",
+
+  // iOS - Instagram App
+  "Instagram 275.0.0.16.92 (iPhone14,5; iOS 16_5; en_US; en; scale=3.00; 1170x2532; 444218278)",
+  "Instagram 270.0.0.18.103 (iPhone13,2; iOS 15_6; en_US; en; scale=2.00; 1080x2340; 438414248)",
+  "Instagram 268.0.0.18.75 (iPhone12,1; iOS 16_1; en_US; en; scale=2.00; 828x1792; 436380008)",
+
+  // Desktop - Chrome
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+
+  // Desktop - Firefox
+  "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:109.0) Gecko/20100101 Firefox/121.0",
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10.15; rv:109.0) Gecko/20100101 Firefox/120.0",
+
+  // Desktop - Safari
+  "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Safari/605.1.15",
+
+  // Mobile - Chrome
+  "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36",
+  "Mozilla/5.0 (Linux; Android 12; SM-G998B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
+
+  // Mobile - Safari (iOS)
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 17_1 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.1 Mobile/15E148 Safari/604.1",
+  "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+];
+
+function getRandomUserAgent() {
+  return USER_AGENTS[Math.floor(Math.random() * USER_AGENTS.length)];
+}
+
 async function instagramGetUrl(url_media) {
   try {
     url_media = await checkRedirect(url_media);
@@ -21,8 +59,20 @@ async function instagramGetUrl(url_media) {
 }
 
 function getCookies() {
-  // Return the full cookie string from env var
-  return process.env.INSTAGRAM_COOKIES || "";
+  const cookieEnv = process.env.INSTAGRAM_COOKIES || "";
+  if (!cookieEnv) return "";
+
+  // Support multiple cookies separated by ;;;
+  const cookiePool = cookieEnv
+    .split(";;;")
+    .map((c) => c.trim())
+    .filter((c) => c);
+
+  if (cookiePool.length === 0) return "";
+  if (cookiePool.length === 1) return cookiePool[0];
+
+  // Randomly select a cookie from the pool
+  return cookiePool[Math.floor(Math.random() * cookiePool.length)];
 }
 
 async function checkRedirect(url) {
@@ -78,8 +128,7 @@ async function getStoryData(storyId) {
       method: "GET",
       url: `https://i.instagram.com/api/v1/media/${storyId}/info/`,
       headers: {
-        "User-Agent":
-          "Instagram 219.0.0.12.117 Android (31/12; 320dpi; 720x1280; samsung; SM-G960F; starlte; samsungexynos9810; en_US; 340910260)",
+        "User-Agent": getRandomUserAgent(),
         Cookie: cookies,
       },
       timeout: 15000,
@@ -139,8 +188,7 @@ async function getStoriesByUsername(username) {
       method: "GET",
       url: `https://i.instagram.com/api/v1/feed/reels_media/?reel_ids=${userId}`,
       headers: {
-        "User-Agent":
-          "Instagram 219.0.0.12.117 Android (31/12; 320dpi; 720x1280; samsung; SM-G960F; starlte; samsungexynos9810; en_US; 340910260)",
+        "User-Agent": getRandomUserAgent(),
         Cookie: cookies,
       },
       timeout: 15000,
@@ -197,8 +245,7 @@ async function getUserId(username) {
       method: "GET",
       url: `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "User-Agent": getRandomUserAgent(),
         Cookie: cookies,
         "X-IG-App-ID": "936619743392459", // Standard App ID for Web
       },
@@ -403,8 +450,7 @@ async function getProfilePictureByUsername(username) {
       method: "GET",
       url: `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
       headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36",
+        "User-Agent": getRandomUserAgent(),
         Cookie: cookies,
         "X-IG-App-ID": "936619743392459",
       },
@@ -424,7 +470,9 @@ async function getProfilePictureByUsername(username) {
     if (err.response && err.response.status === 404) {
       throw new Error(`Instagram user "${username}" does not exist.`);
     }
-    throw new Error(`Could not fetch profile picture for ${username}: ${err.message}`);
+    throw new Error(
+      `Could not fetch profile picture for ${username}: ${err.message}`
+    );
   }
 }
 
