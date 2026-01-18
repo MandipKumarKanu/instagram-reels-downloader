@@ -497,6 +497,47 @@ function createOutputData(requestData) {
   }
 }
 
+async function getProfileByUsername(username) {
+  try {
+    const cookies = getCookies();
+    const config = {
+      method: "GET",
+      url: `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
+      headers: {
+        "User-Agent": getRandomUserAgent(),
+        Cookie: cookies,
+        "X-IG-App-ID": "936619743392459",
+      },
+      timeout: 15000,
+    };
+    const { data } = await retryWithBackoff(() => axios.request(config));
+    if (!data.data || !data.data.user) {
+      throw new Error("User not found or profile is restricted.");
+    }
+    const user = data.data.user;
+    return {
+      username: user.username,
+      fullname: user.full_name,
+      biography: user.biography,
+      profile_pic_url: user.profile_pic_url_hd,
+      is_private: user.is_private,
+      is_verified: user.is_verified,
+      followers: user.edge_followed_by?.count || 0,
+      following: user.edge_follow?.count || 0,
+      posts_count: user.edge_owner_to_timeline_media?.count || 0,
+      external_url: user.external_url,
+      category: user.category_name,
+    };
+  } catch (err) {
+    if (err.response && err.response.status === 404) {
+      throw new Error(`Instagram user "${username}" does not exist.`);
+    }
+    throw new Error(
+      `Could not fetch profile for ${username}: ${err.message}`
+    );
+  }
+}
+
 async function getProfilePictureByUsername(username) {
   try {
     const cookies = getCookies();
@@ -692,6 +733,7 @@ module.exports = {
   instagramGetUrl,
   getStoriesByUsername,
   getProfilePictureByUsername,
+  getProfileByUsername,
   getHighlightsByUsername,
   getPostsByUsername,
   setErrorMonitor,
