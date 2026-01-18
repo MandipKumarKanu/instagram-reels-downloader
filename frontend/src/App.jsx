@@ -9,6 +9,78 @@ import {
   FaTimes,
 } from "react-icons/fa";
 
+// Cobalt API instances for fallback
+const COBALT_INSTANCES = [
+  "https://co.eepy.today/",
+  "https://cobalt.api.timelessnesses.me/",
+  "https://api.cobalt.tools/",
+];
+
+// Detect platform from URL
+function detectPlatform(url) {
+  if (/instagram\.com/.test(url)) return { platform: 'instagram', emoji: '📸', name: 'Instagram' };
+  if (/tiktok\.com|vm\.tiktok/.test(url)) return { platform: 'tiktok', emoji: '🎵', name: 'TikTok' };
+  if (/twitter\.com|x\.com/.test(url)) return { platform: 'twitter', emoji: '🐦', name: 'Twitter/X' };
+  if (/facebook\.com|fb\.watch/.test(url)) return { platform: 'facebook', emoji: '👤', name: 'Facebook' };
+  if (/pinterest\.com|pin\.it/.test(url)) return { platform: 'pinterest', emoji: '📌', name: 'Pinterest' };
+  return null;
+}
+
+// Fetch via Cobalt API with multiple instance fallbacks
+async function fetchViaCobalt(url) {
+  let lastError;
+
+  for (const instance of COBALT_INSTANCES) {
+    try {
+      console.log(`[Cobalt] Trying: ${instance}`);
+      const response = await fetch(instance, {
+        method: "POST",
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          url: url,
+          downloadMode: "auto",
+          videoQuality: "1080",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.status === "error") {
+        lastError = new Error(data.text || "Cobalt failed");
+        continue;
+      }
+
+      if (data.status === "redirect" || data.status === "tunnel" || data.status === "stream") {
+        return {
+          url_list: [data.url],
+          media_details: [{ type: "video", url: data.url }],
+        };
+      }
+
+      if (data.status === "picker" && data.picker) {
+        const urls = data.picker.map((p) => p.url);
+        return {
+          url_list: urls,
+          media_details: data.picker.map((p) => ({
+            type: p.type === "photo" ? "image" : "video",
+            url: p.url,
+            thumbnail: p.thumb,
+          })),
+        };
+      }
+    } catch (err) {
+      console.log(`[Cobalt] ${instance} failed:`, err.message);
+      lastError = err;
+    }
+  }
+
+  throw lastError || new Error("All Cobalt instances failed");
+}
+
+// Fetch via backend (for Instagram with special features)
 async function fetchViaBackend(url) {
   const backendUrl =
     import.meta.env.VITE_BACKEND_URL || "http://localhost:5000";
@@ -29,9 +101,10 @@ function App() {
 
   const handleDownload = async () => {
     if (!url) return;
-    const isInstagram = url.includes("instagram.com");
-    if (!isInstagram) {
-      setError("Invalid link. Instagram only.");
+    
+    const platform = detectPlatform(url);
+    if (!platform) {
+      setError("Unsupported link. Try Instagram, TikTok, YouTube, Twitter, Facebook, or Pinterest.");
       return;
     }
 
@@ -40,19 +113,36 @@ function App() {
     setData(null);
     setCurrentMediaIndex(0);
 
-    try {
-      console.log("Fetching from backend...");
-      const result = await fetchViaBackend(url);
-      if (result) {
-        console.log("Backend succeeded!");
-        setData(result);
+    // For Instagram: try Cobalt first, then backend
+    // For other platforms: use Cobalt only
+    const methods = platform.platform === 'instagram'
+      ? [
+          { name: "Cobalt", fn: () => fetchViaCobalt(url) },
+          { name: "Backend", fn: () => fetchViaBackend(url) },
+        ]
+      : [
+          { name: "Cobalt", fn: () => fetchViaCobalt(url) },
+        ];
+
+    let lastError;
+    for (const method of methods) {
+      try {
+        console.log(`Trying ${method.name}...`);
+        const result = await method.fn();
+        if (result && result.url_list && result.url_list.length > 0) {
+          console.log(`${method.name} succeeded!`);
+          setData(result);
+          setLoading(false);
+          return;
+        }
+      } catch (err) {
+        console.log(`${method.name} failed:`, err.message);
+        lastError = err;
       }
-    } catch (err) {
-      console.log("Backend failed:", err.message);
-      setError(err.message || "Failed to fetch content");
-    } finally {
-      setLoading(false);
     }
+
+    setError(lastError?.message || "Failed to fetch content");
+    setLoading(false);
   };
 
   return (
@@ -61,7 +151,7 @@ function App() {
         <section className="panel panel-input">
           <div className="panel-header">
             <div className="brand-mark">
-              <span className="brand-dot" /> Reel Saver
+              <span className="brand-dot" /> Media Saver
             </div>
             <div className="status-chip">
               <span className="status-light online" /> Secure Download
@@ -69,30 +159,31 @@ function App() {
           </div>
 
           <div className="hero">
-            <p className="eyebrow">Instagram Downloader</p>
+            <p className="eyebrow">Multi-Platform Downloader</p>
             <h1>
-              Reel & Post Saver
+              Media Saver
               <span className="dot" />
             </h1>
             <p className="lede">
-              Paste an Instagram link to download reels, videos, or photos
-              instantly.
+              Download from Instagram, TikTok, Twitter, Facebook & Pinterest.
             </p>
             <div className="chips">
-              <span>Fast</span>
-              <span>HD quality</span>
-              <span>No watermark</span>
+              <span>📸 Instagram</span>
+              <span>🎵 TikTok</span>
+              <span>🐦 Twitter</span>
+              <span>👤 Facebook</span>
+              <span>📌 Pinterest</span>
             </div>
           </div>
 
           <label className="field-label" htmlFor="reel-url">
-            Post/Reel URL
+            Video/Post URL
           </label>
           <div className="field-row">
             <input
               id="reel-url"
               type="text"
-              placeholder="Paste Instagram link..."
+              placeholder="Paste any supported link..."
               value={url}
               onChange={(e) => setUrl(e.target.value)}
               className="text-input"
@@ -248,8 +339,7 @@ function App() {
               <div className="placeholder-icon">⇣</div>
               <h2>Feed me a link</h2>
               <p>
-                Drop an Instagram link to render a preview and download
-                instantly.
+                Paste a link from Instagram, TikTok, YouTube, Twitter, Facebook or Pinterest.
               </p>
             </div>
           )}

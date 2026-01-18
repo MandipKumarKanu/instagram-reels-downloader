@@ -497,6 +497,47 @@ function createOutputData(requestData) {
   }
 }
 
+async function getProfileByUsername(username) {
+  try {
+    const cookies = getCookies();
+    const config = {
+      method: "GET",
+      url: `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
+      headers: {
+        "User-Agent": getRandomUserAgent(),
+        Cookie: cookies,
+        "X-IG-App-ID": "936619743392459",
+      },
+      timeout: 15000,
+    };
+    const { data } = await retryWithBackoff(() => axios.request(config));
+    if (!data.data || !data.data.user) {
+      throw new Error("User not found or profile is restricted.");
+    }
+    const user = data.data.user;
+    return {
+      username: user.username,
+      fullname: user.full_name,
+      biography: user.biography,
+      profile_pic_url: user.profile_pic_url_hd,
+      is_private: user.is_private,
+      is_verified: user.is_verified,
+      followers: user.edge_followed_by?.count || 0,
+      following: user.edge_follow?.count || 0,
+      posts_count: user.edge_owner_to_timeline_media?.count || 0,
+      external_url: user.external_url,
+      category: user.category_name,
+    };
+  } catch (err) {
+    if (err.response && err.response.status === 404) {
+      throw new Error(`Instagram user "${username}" does not exist.`);
+    }
+    throw new Error(
+      `Could not fetch profile for ${username}: ${err.message}`
+    );
+  }
+}
+
 async function getProfilePictureByUsername(username) {
   try {
     const cookies = getCookies();
@@ -530,9 +571,170 @@ async function getProfilePictureByUsername(username) {
   }
 }
 
+async function getHighlightsByUsername(username) {
+  try {
+    const userId = await getUserId(username);
+    const cookies = getCookies();
+    if (!cookies) throw new Error("Cookies missing.");
+
+    // 1. Fetch the list of highlight trays
+    const trayConfig = {
+      method: "GET",
+      url: `https://i.instagram.com/api/v1/highlights/${userId}/highlights_tray/`,
+      headers: {
+        "User-Agent": getMobileInstagramUA(),
+        Cookie: cookies,
+      },
+      timeout: 15000,
+    };
+
+    const { data: trayData } = await retryWithBackoff(() =>
+      axios.request(trayConfig)
+    );
+    if (!trayData.tray || trayData.tray.length === 0) {
+      throw new Error("No highlights found for this user.");
+    }
+
+    // 2. Extract reel IDs for all highlights
+    const reelIds = trayData.tray.map((highlight) => highlight.id);
+
+    // 3. Fetch all highlight media in one go
+    const reelsConfig = {
+      method: "POST",
+      url: "https://i.instagram.com/api/v1/feed/reels_media/",
+      headers: {
+        "User-Agent": getMobileInstagramUA(),
+        Cookie: cookies,
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      data: qs.stringify({
+        user_ids: reelIds,
+      }),
+      timeout: 20000,
+    };
+
+    const { data: reelsData } = await retryWithBackoff(() =>
+      axios.request(reelsConfig)
+    );
+    if (!reelsData.reels || Object.keys(reelsData.reels).length === 0) {
+      throw new Error("Could not fetch highlight media.");
+    }
+
+    // 4. Process the media from all reels
+    let all_media_details = [];
+    for (const reelId in reelsData.reels) {
+      const reel = reelsData.reels[reelId];
+      if (reel.items) {
+        const media_details = reel.items.map((item) => {
+          if (item.media_type === 1) {
+            return {
+              type: "image",
+              url: item.image_versions2.candidates[0].url,
+            };
+          } else {
+            return {
+              type: "video",
+              url: item.video_versions[0].url,
+              thumbnail: item.image_versions2.candidates[0].url,
+            };
+          }
+        });
+        all_media_details = all_media_details.concat(media_details);
+      }
+    }
+
+    if (all_media_details.length === 0) {
+      throw new Error("Highlights contain no media or are inaccessible.");
+    }
+
+    return {
+      results_number: all_media_details.length,
+      post_info: {
+        owner_username: username,
+        caption: `Highlights from ${username}`,
+      },
+      media_details: all_media_details,
+    };
+  } catch (err) {
+    throw new Error(`Failed to fetch highlights: ${err.message}`);
+  }
+}
+
+async function getPostsByUsername(username, maxCount = 5) {
+  try {
+    const userId = await getUserId(username);
+    const cookies = getCookies();
+    if (!cookies) throw new Error("Cookies missing.");
+
+    const config = {
+      method: "GET",
+      url: `https://i.instagram.com/api/v1/feed/user/${userId}/`,
+      headers: {
+        "User-Agent": getMobileInstagramUA(),
+        Cookie: cookies,
+      },
+      timeout: 15000,
+    };
+
+    const { data } = await retryWithBackoff(() => axios.request(config));
+    if (!data.items || data.items.length === 0) {
+      throw new Error("No posts found for this user.");
+    }
+
+    const media_details = [];
+    let postCount = 0;
+    for (const item of data.items) {
+      if (postCount >= maxCount) break;
+
+      if (item.carousel_media) {
+        item.carousel_media.forEach((media) => {
+          if (media.media_type === 1) {
+            media_details.push({
+              type: "image",
+              url: media.image_versions2.candidates[0].url,
+            });
+          } else {
+            media_details.push({
+              type: "video",
+              url: media.video_versions[0].url,
+              thumbnail: media.image_versions2.candidates[0].url,
+            });
+          }
+        });
+      } else if (item.media_type === 1) {
+        media_details.push({
+          type: "image",
+          url: item.image_versions2.candidates[0].url,
+        });
+      } else if (item.media_type === 2) {
+        media_details.push({
+          type: "video",
+          url: item.video_versions[0].url,
+          thumbnail: item.image_versions2.candidates[0].url,
+        });
+      }
+      postCount++;
+    }
+
+    return {
+      results_number: media_details.length,
+      post_info: {
+        owner_username: username,
+        caption: `Latest posts from ${username}`,
+      },
+      media_details,
+    };
+  } catch (err) {
+    throw new Error(`Failed to fetch posts: ${err.message}`);
+  }
+}
+
 module.exports = {
   instagramGetUrl,
   getStoriesByUsername,
   getProfilePictureByUsername,
+  getProfileByUsername,
+  getHighlightsByUsername,
+  getPostsByUsername,
   setErrorMonitor,
 };
