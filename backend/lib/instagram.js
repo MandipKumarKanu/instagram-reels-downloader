@@ -497,17 +497,125 @@ function createOutputData(requestData) {
   }
 }
 
+// Fallback: Scrape profile from HTML (works without cookies on cloud)
+async function scrapeProfileFromHTML(username) {
+  try {
+    const config = {
+      method: "GET",
+      url: `https://www.instagram.com/${username}/`,
+      headers: {
+        "User-Agent": getRandomUserAgent(),
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.5",
+        "Connection": "keep-alive",
+      },
+      timeout: 15000,
+    };
+    
+    const { data: html } = await axios.request(config);
+    
+    // Try to find profile data in various script patterns
+    let profileData = null;
+    
+    // Pattern 1: Look for meta tags (most reliable for public profiles)
+    const descMatch = html.match(/<meta\s+property="og:description"\s+content="([^"]+)"/i) ||
+                      html.match(/<meta\s+content="([^"]+)"\s+property="og:description"/i);
+    const titleMatch = html.match(/<meta\s+property="og:title"\s+content="([^"]+)"/i) ||
+                       html.match(/<meta\s+content="([^"]+)"\s+property="og:title"/i);
+    const imageMatch = html.match(/<meta\s+property="og:image"\s+content="([^"]+)"/i) ||
+                       html.match(/<meta\s+content="([^"]+)"\s+property="og:image"/i);
+    
+    if (descMatch && titleMatch) {
+      // Parse "123 Followers, 45 Following, 67 Posts - See Instagram photos..."
+      const desc = descMatch[1];
+      const title = titleMatch[1];
+      const image = imageMatch ? imageMatch[1] : null;
+      
+      // Extract numbers from description
+      const followersMatch = desc.match(/([\d,.]+[KMB]?)\s*Followers/i);
+      const followingMatch = desc.match(/([\d,.]+[KMB]?)\s*Following/i);
+      const postsMatch = desc.match(/([\d,.]+[KMB]?)\s*Posts/i);
+      
+      // Parse title: "Full Name (@username)"
+      const nameMatch = title.match(/^(.+?)\s*\(@?(\w+)\)/);
+      
+      const parseCount = (str) => {
+        if (!str) return 0;
+        str = str.replace(/,/g, '');
+        if (str.includes('K')) return Math.round(parseFloat(str) * 1000);
+        if (str.includes('M')) return Math.round(parseFloat(str) * 1000000);
+        if (str.includes('B')) return Math.round(parseFloat(str) * 1000000000);
+        return parseInt(str) || 0;
+      };
+      
+      profileData = {
+        username: nameMatch ? nameMatch[2] : username,
+        fullname: nameMatch ? nameMatch[1].trim() : username,
+        biography: desc.split(' - See Instagram')[0].replace(/^[\d,.\s]+Followers,[\d,.\s]+Following,[\d,.\s]+Posts\s*[-–]\s*/i, '').trim() || "",
+        profile_pic_url: image,
+        is_private: desc.toLowerCase().includes('private'),
+        is_verified: title.includes('✓') || html.includes('is_verified":true'),
+        followers: parseCount(followersMatch ? followersMatch[1] : '0'),
+        following: parseCount(followingMatch ? followingMatch[1] : '0'),
+        posts_count: parseCount(postsMatch ? postsMatch[1] : '0'),
+        external_url: null,
+        category: null,
+      };
+    }
+    
+    // Pattern 2: Try to find JSON-LD data
+    if (!profileData) {
+      const ldMatch = html.match(/<script\s+type="application\/ld\+json"[^>]*>([^<]+)<\/script>/i);
+      if (ldMatch) {
+        try {
+          const ld = JSON.parse(ldMatch[1]);
+          if (ld.name || ld.alternateName) {
+            profileData = {
+              username: ld.alternateName?.replace('@', '') || username,
+              fullname: ld.name || username,
+              biography: ld.description || "",
+              profile_pic_url: ld.image || null,
+              is_private: false,
+              is_verified: false,
+              followers: ld.mainEntityofPage?.interactionStatistic?.find(s => s.interactionType?.includes('Follow'))?.userInteractionCount || 0,
+              following: 0,
+              posts_count: 0,
+              external_url: ld.url || null,
+              category: null,
+            };
+          }
+        } catch (e) {}
+      }
+    }
+    
+    if (profileData && profileData.profile_pic_url) {
+      return profileData;
+    }
+    
+    throw new Error("Could not parse profile data from HTML");
+  } catch (err) {
+    throw new Error(`HTML scrape failed: ${err.message}`);
+  }
+}
+
 async function getProfileByUsername(username) {
+  // First try the API method
   try {
     const cookies = getCookies();
+    const headers = {
+      "User-Agent": getRandomUserAgent(),
+      "X-IG-App-ID": "936619743392459",
+    };
+    
+    // Only add cookies if available
+    if (cookies) {
+      headers.Cookie = cookies;
+    }
+    
     const config = {
       method: "GET",
       url: `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
-      headers: {
-        "User-Agent": getRandomUserAgent(),
-        Cookie: cookies,
-        "X-IG-App-ID": "936619743392459",
-      },
+      headers,
       timeout: 15000,
     };
     const { data } = await retryWithBackoff(() => axios.request(config));
@@ -528,27 +636,41 @@ async function getProfileByUsername(username) {
       external_url: user.external_url,
       category: user.category_name,
     };
-  } catch (err) {
-    if (err.response && err.response.status === 404) {
-      throw new Error(`Instagram user "${username}" does not exist.`);
+  } catch (apiErr) {
+    // API failed, try HTML scraping as fallback
+    console.log(`API failed for ${username}, trying HTML scrape...`);
+    try {
+      return await scrapeProfileFromHTML(username);
+    } catch (scrapeErr) {
+      // Both methods failed
+      if (apiErr.response && apiErr.response.status === 404) {
+        throw new Error(`Instagram user "${username}" does not exist.`);
+      }
+      throw new Error(
+        `Could not fetch profile for ${username}: ${apiErr.message}`
+      );
     }
-    throw new Error(
-      `Could not fetch profile for ${username}: ${err.message}`
-    );
   }
 }
 
 async function getProfilePictureByUsername(username) {
+  // First try the API method
   try {
     const cookies = getCookies();
+    const headers = {
+      "User-Agent": getRandomUserAgent(),
+      "X-IG-App-ID": "936619743392459",
+    };
+    
+    // Only add cookies if available
+    if (cookies) {
+      headers.Cookie = cookies;
+    }
+    
     const config = {
       method: "GET",
       url: `https://www.instagram.com/api/v1/users/web_profile_info/?username=${username}`,
-      headers: {
-        "User-Agent": getRandomUserAgent(),
-        Cookie: cookies,
-        "X-IG-App-ID": "936619743392459",
-      },
+      headers,
       timeout: 15000,
     };
     const { data } = await retryWithBackoff(() => axios.request(config));
@@ -561,13 +683,25 @@ async function getProfilePictureByUsername(username) {
       fullname: data.data.user.full_name,
       is_private: data.data.user.is_private,
     };
-  } catch (err) {
-    if (err.response && err.response.status === 404) {
-      throw new Error(`Instagram user "${username}" does not exist.`);
+  } catch (apiErr) {
+    // API failed, try HTML scraping as fallback
+    console.log(`API failed for PFP ${username}, trying HTML scrape...`);
+    try {
+      const profile = await scrapeProfileFromHTML(username);
+      return {
+        url: profile.profile_pic_url,
+        username: profile.username,
+        fullname: profile.fullname,
+        is_private: profile.is_private,
+      };
+    } catch (scrapeErr) {
+      if (apiErr.response && apiErr.response.status === 404) {
+        throw new Error(`Instagram user "${username}" does not exist.`);
+      }
+      throw new Error(
+        `Could not fetch profile picture for ${username}: ${apiErr.message}`
+      );
     }
-    throw new Error(
-      `Could not fetch profile picture for ${username}: ${err.message}`
-    );
   }
 }
 
